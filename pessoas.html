@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Pessoas - Pelada Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="conteudo conteudo-pessoas">
+    <h1>Pessoas</h1>
+    <p>Cadastre uma pessoa para manter os eventos separados por conta.</p>
+
+    <section class="card-pessoas">
+      <h2>Nova pessoa</h2>
+      <form id="formPessoa" class="form-evento">
+        <label for="nomePessoa">Nome</label>
+        <input id="nomePessoa" name="nomePessoa" type="text" required>
+        <button type="submit">Cadastrar pessoa</button>
+      </form>
+    </section>
+
+    <section class="card-pessoas">
+      <h2>Pessoas cadastradas</h2>
+      <ul id="listaPessoas" class="lista-pessoas"></ul>
+    </section>
+  </main>
+
+  <script src="pessoas.js"></script>
+</body>
+</html>

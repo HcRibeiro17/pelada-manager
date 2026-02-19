@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Detalhes do Evento</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="conteudo conteudo-evento">
+    <div class="acoes-evento">
+      <a href="index.html" class="btn-voltar">Voltar para eventos</a>
+      <button type="button" class="btn-conta" onclick="trocarConta()">Trocar conta</button>
+    </div>
+
+    <header class="cabecalho-evento">
+      <h1 id="tituloEvento">Detalhes do evento</h1>
+      <nav class="abas-topo">
+        <button type="button" class="aba-btn ativa" data-aba="info">Informacoes</button>
+        <button type="button" class="aba-btn" data-aba="jogadores">Jogadores</button>
+        <button type="button" class="aba-btn" data-aba="partidas">Partidas</button>
+      </nav>
+    </header>
+
+    <section id="aba-info" class="aba-conteudo ativa">
+      <form id="formInfoEvento" class="form-evento">
+        <label for="nomeEvento">Nome do evento</label>
+        <input id="nomeEvento" name="nomeEvento" type="text" required>
+
+        <p class="label-grupo">Dia da semana</p>
+        <div id="diasSemanaInfo" class="dias-semana">
+          <button type="button" class="dia-btn" data-dia="Seg">Seg</button>
+          <button type="button" class="dia-btn" data-dia="Ter">Ter</button>
+          <button type="button" class="dia-btn" data-dia="Qua">Qua</button>
+          <button type="button" class="dia-btn" data-dia="Qui">Qui</button>
+          <button type="button" class="dia-btn" data-dia="Sex">Sex</button>
+          <button type="button" class="dia-btn" data-dia="Sab">Sab</button>
+          <button type="button" class="dia-btn" data-dia="Dom">Dom</button>
+        </div>
+
+        <label for="horaInicio">Horario de inicio</label>
+        <input id="horaInicio" name="horaInicio" type="time" required>
+
+        <label for="tipoEvento">Tipo</label>
+        <select id="tipoEvento" name="tipoEvento" required>
+          <option value="">Selecione</option>
+          <option value="Futsal">Futsal</option>
+          <option value="Campo">Campo</option>
+          <option value="Society">Society</option>
+        </select>
+
+        <label for="limiteJogadores">Limite de jogadores</label>
+        <input id="limiteJogadores" name="limiteJogadores" type="number" min="1" required>
+
+        <label for="limiteGoleiros">Limite de goleiros</label>
+        <input id="limiteGoleiros" name="limiteGoleiros" type="number" min="0" required>
+
+        <div class="acoes-form">
+          <button type="submit">Salvar alteracoes</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="aba-jogadores" class="aba-conteudo">
+      <form id="formJogador" class="form-jogador">
+        <label for="nomeJogador">Nome do jogador</label>
+        <input id="nomeJogador" type="text" required>
+
+        <label for="posicaoJogador">Posicao</label>
+        <select id="posicaoJogador" required>
+          <option value="">Selecione</option>
+          <option value="Ala">Ala</option>
+          <option value="Fixo">Fixo</option>
+          <option value="Pivo">Pivo</option>
+          <option value="Goleiro">Goleiro</option>
+        </select>
+
+        <p class="label-grupo">Nivel (1-5 estrelas)</p>
+        <div id="estrelasNivel" class="estrelas" aria-label="Nivel do jogador">
+          <button type="button" class="estrela-btn" data-nivel="1">&#9733;</button>
+          <button type="button" class="estrela-btn" data-nivel="2">&#9733;</button>
+          <button type="button" class="estrela-btn" data-nivel="3">&#9733;</button>
+          <button type="button" class="estrela-btn" data-nivel="4">&#9733;</button>
+          <button type="button" class="estrela-btn" data-nivel="5">&#9733;</button>
+        </div>
+
+        <label class="check-mensalista" for="mensalistaJogador">
+          <input id="mensalistaJogador" type="checkbox">
+          Jogador mensalista
+        </label>
+
+        <button type="submit">Adicionar jogador</button>
+      </form>
+
+      <div class="listas-jogadores">
+        <section>
+          <h2>Mensalistas</h2>
+          <ul id="listaMensalistasEvento" class="lista-jogadores"></ul>
+        </section>
+
+        <section>
+          <h2>Nao mensalistas</h2>
+          <ul id="listaNaoMensalistasEvento" class="lista-jogadores"></ul>
+        </section>
+      </div>
+    </section>
+
+    <section id="aba-partidas" class="aba-conteudo">
+      <nav class="abas-partidas">
+        <button type="button" class="aba-partida-btn ativa" data-subaba="gestao">Gestao e jogo</button>
+        <button type="button" class="aba-partida-btn" data-subaba="historico">Historico e ranking</button>
+      </nav>
+
+      <section id="subaba-gestao" class="subaba-partida ativa">
+        <div class="partidas-grid">
+          <section class="card-partida">
+            <h2>Times (5 jogadores)</h2>
+            <form id="formTime" class="form-time">
+              <input id="timeEdicaoId" type="hidden">
+
+              <label for="nomeTime">Nome do time</label>
+              <input id="nomeTime" type="text" maxlength="40" required>
+
+              <p class="label-grupo">Escolha exatamente 5 jogadores</p>
+              <div id="selecaoJogadoresTime" class="selecao-jogadores-time"></div>
+
+              <div class="acoes-form">
+                <button type="submit" id="btnSalvarTime">Criar time</button>
+                <button type="button" id="btnCancelarEdicaoTime" class="oculto">Cancelar edicao</button>
+              </div>
+            </form>
+
+            <h3>Times cadastrados</h3>
+            <ul id="listaTimes" class="lista-jogadores"></ul>
+          </section>
+
+          <section class="card-partida">
+            <h2>Partida</h2>
+            <form id="formCriarPartida" class="form-time">
+              <label for="selectTimeA">Time A</label>
+              <select id="selectTimeA" required></select>
+
+              <label for="selectTimeB">Time B</label>
+              <select id="selectTimeB" required></select>
+
+              <label for="duracaoPartida">Duracao (minutos)</label>
+              <select id="duracaoPartida">
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+              </select>
+
+              <button type="submit">Iniciar partida</button>
+            </form>
+
+            <div id="painelPartidaAtiva" class="painel-partida"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="subaba-historico" class="subaba-partida">
+        <section class="card-partida">
+          <h2>Historico de partidas</h2>
+          <div class="filtros-historico">
+            <div>
+              <label for="filtroDataPartida">Data</label>
+              <input id="filtroDataPartida" type="date">
+            </div>
+            <div>
+              <label for="filtroTimePartida">Time</label>
+              <select id="filtroTimePartida"></select>
+            </div>
+            <div class="acoes-historico">
+              <button type="button" id="btnExportarHistorico">Exportar JSON</button>
+              <button type="button" id="btnResetarCampeonato" class="btn-excluir">Resetar campeonato</button>
+            </div>
+          </div>
+
+          <div class="historico-grid">
+            <ul id="listaHistoricoPartidas" class="lista-jogadores"></ul>
+            <article id="detalhePartidaHistorico" class="detalhe-historico"></article>
+          </div>
+        </section>
+
+        <div class="rankings-grid">
+          <section class="card-partida">
+            <h2>Ranking de artilheiros</h2>
+            <ul id="listaArtilheiros" class="lista-jogadores"></ul>
+          </section>
+
+          <section class="card-partida">
+            <h2>Ranking de assistencias</h2>
+            <ul id="listaAssistencias" class="lista-jogadores"></ul>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="evento.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Pelada Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="menuLateral" class="menu-lateral">
+    <div class="menu-links">
+      <a href="index.html">Inicio</a>
+      <a href="pessoas.html">Pessoas</a>
+    </div>
+    <div class="menu-rodape">
+      <button class="btn-conta menu-trocar-conta" type="button" onclick="trocarConta()">Trocar conta</button>
+    </div>
+  </div>
+
+  <header class="topo">
+    <button id="menuBtn" class="menu-btn" aria-label="Abrir menu" aria-expanded="false" onclick="toggleMenu()">&#9776;</button>
+    <h1>Pelada Manager</h1>
+    <a class="btn-perfil" href="perfil.html" aria-label="Abrir perfil">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.2 0-8 2.1-8 4.7V21h16v-2.3C20 16.1 16.2 14 12 14z"/>
+      </svg>
+    </a>
+  </header>
+
+  <main class="conteudo">
+    <button class="btn-principal" onclick="abrirFormularioEvento()">
+      + Criar novo evento
+    </button>
+
+    <section id="formEventoContainer" class="form-evento-container oculto">
+      <h2>Novo evento</h2>
+      <form id="formEvento" class="form-evento">
+        <label for="nomeEvento">Nome do evento</label>
+        <input id="nomeEvento" name="nomeEvento" type="text" required>
+
+        <p class="label-grupo">Dia da semana</p>
+        <div id="diasSemana" class="dias-semana">
+          <button type="button" class="dia-btn" data-dia="Seg">Seg</button>
+          <button type="button" class="dia-btn" data-dia="Ter">Ter</button>
+          <button type="button" class="dia-btn" data-dia="Qua">Qua</button>
+          <button type="button" class="dia-btn" data-dia="Qui">Qui</button>
+          <button type="button" class="dia-btn" data-dia="Sex">Sex</button>
+          <button type="button" class="dia-btn" data-dia="Sab">Sab</button>
+          <button type="button" class="dia-btn" data-dia="Dom">Dom</button>
+        </div>
+
+        <label for="horaInicio">Horario de inicio</label>
+        <input id="horaInicio" name="horaInicio" type="time" required>
+
+        <label for="tipoEvento">Tipo</label>
+        <select id="tipoEvento" name="tipoEvento" required>
+          <option value="">Selecione</option>
+          <option value="Futsal">Futsal</option>
+          <option value="Campo">Campo</option>
+          <option value="Society">Society</option>
+        </select>
+
+        <label for="limiteJogadores">Limite de jogadores</label>
+        <input id="limiteJogadores" name="limiteJogadores" type="number" min="1" required>
+
+        <label for="limiteGoleiros">Limite de goleiros</label>
+        <input id="limiteGoleiros" name="limiteGoleiros" type="number" min="0" required>
+
+        <div class="acoes-form">
+          <button type="submit">Salvar evento</button>
+          <button type="button" id="cancelarEvento">Cancelar</button>
+        </div>
+      </form>
+    </section>
+
+    <ul id="listaEventos"></ul>
+  </main>
+
+  <script src="index.js"></script>
+</body>
+</html>
