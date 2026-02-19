@@ -156,14 +156,14 @@ function toggleMenu() {
 
 function trocarConta() {
   localStorage.removeItem(CHAVE_USUARIO_ATUAL);
-  window.location.href = "pessoas.html";
+  window.location.href = "login.html";
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   usuarioAtual = obterUsuarioAtual();
 
   if (!usuarioAtual) {
-    window.location.href = "pessoas.html";
+    window.location.href = "login.html";
     return;
   }
 

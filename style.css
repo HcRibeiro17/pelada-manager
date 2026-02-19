@@ -79,11 +79,10 @@ body.menu-aberto .conteudo {
   height: 100%;
   background: #333;
   padding-top: 60px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  padding-bottom: 72px;
   transition: 0.3s;
   z-index: 10;
+  box-sizing: border-box;
 }
 
 .menu-lateral.aberto {
@@ -107,7 +106,14 @@ body.menu-aberto .conteudo {
 }
 
 .menu-rodape {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
   padding: 14px;
+  box-sizing: border-box;
+  background: #2d2d2d;
+  border-top: 1px solid #454545;
 }
 
 .menu-trocar-conta {
@@ -565,6 +571,16 @@ body.menu-aberto .conteudo {
   text-align: left;
 }
 
+.auth-container {
+  max-width: 960px;
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
 .card-pessoas {
   border: 1px solid #d7d7d7;
   border-radius: 10px;
@@ -599,6 +615,10 @@ body.menu-aberto .conteudo {
   .historico-grid,
   .filtros-historico,
   .rankings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-grid {
     grid-template-columns: 1fr;
   }
 

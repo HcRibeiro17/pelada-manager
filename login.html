@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Pelada Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="conteudo conteudo-pessoas auth-container">
+    <h1>Pelada Manager</h1>
+    <p>Entre com usuario e senha ou crie sua conta.</p>
+
+    <div class="auth-grid">
+      <section class="card-pessoas">
+        <h2>Entrar</h2>
+        <form id="formLogin" class="form-evento">
+          <label for="loginUsuario">Usuario</label>
+          <input id="loginUsuario" name="loginUsuario" type="text" autocomplete="username" required>
+
+          <label for="loginSenha">Senha</label>
+          <input id="loginSenha" name="loginSenha" type="password" autocomplete="current-password" required>
+
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <section class="card-pessoas">
+        <h2>Criar conta</h2>
+        <form id="formCadastro" class="form-evento">
+          <label for="cadastroNome">Nome de exibicao</label>
+          <input id="cadastroNome" name="cadastroNome" type="text" required>
+
+          <label for="cadastroUsuario">Usuario</label>
+          <input id="cadastroUsuario" name="cadastroUsuario" type="text" required>
+
+          <label for="cadastroSenha">Senha</label>
+          <input id="cadastroSenha" name="cadastroSenha" type="password" autocomplete="new-password" required>
+
+          <button type="submit">Cadastrar e entrar</button>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <script src="login.js"></script>
+</body>
+</html>

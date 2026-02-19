@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const usuarioAtual = obterUsuarioAtual();
 
   if (!usuarioAtual) {
-    window.location.href = "pessoas.html";
+    window.location.href = "login.html";
     return;
   }
 
@@ -54,6 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("perfilNome").textContent = `Nome: ${usuarioAtual.nome}`;
   document.getElementById("perfilId").textContent = `ID da conta: ${usuarioAtual.id}`;
+  document.getElementById("perfilUsuario").textContent = `Usuario: ${usuarioAtual.username || "-"}`;
   document.getElementById("perfilEventos").textContent = `Eventos cadastrados: ${stats.totalEventos}`;
   document.getElementById("perfilPartidas").textContent = `Partidas finalizadas: ${stats.totalPartidas}`;
   document.getElementById("perfilGols").textContent = `Gols acumulados: ${stats.totalGols}`;

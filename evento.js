@@ -49,7 +49,7 @@ function salvarEventos() {
 
 function trocarConta() {
   localStorage.removeItem(CHAVE_USUARIO_ATUAL);
-  window.location.href = "pessoas.html";
+  window.location.href = "login.html";
 }
 
 function inicializarEstruturaEvento() {
@@ -1310,7 +1310,7 @@ document.addEventListener("DOMContentLoaded", () => {
   usuarioAtual = obterUsuarioAtual();
 
   if (!usuarioAtual) {
-    window.location.href = "pessoas.html";
+    window.location.href = "login.html";
     return;
   }
 
