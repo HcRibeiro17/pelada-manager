@@ -29,13 +29,45 @@ function validarUsuario(username) {
 
 async function hashSenha(senha) {
   if (!crypto.subtle) {
-    return btoa(unescape(encodeURIComponent(senha)));
+    return `b64:${btoa(unescape(encodeURIComponent(senha)))}`;
   }
 
   const data = new TextEncoder().encode(senha);
   const digest = await crypto.subtle.digest("SHA-256", data);
   const bytes = Array.from(new Uint8Array(digest));
+  return `sha256:${bytes.map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function hashSenhaSha256(senha) {
+  const data = new TextEncoder().encode(senha);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  const bytes = Array.from(new Uint8Array(digest));
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function hashSenhaBase64Legado(senha) {
+  return btoa(unescape(encodeURIComponent(senha)));
+}
+
+async function validarSenhaInformada(senha, passwordHash) {
+  if (!passwordHash) return false;
+
+  if (passwordHash.startsWith("sha256:")) {
+    if (!crypto.subtle) return false;
+    const hash = await hashSenhaSha256(senha);
+    return hash === passwordHash.slice("sha256:".length);
+  }
+
+  if (passwordHash.startsWith("b64:")) {
+    return hashSenhaBase64Legado(senha) === passwordHash.slice("b64:".length);
+  }
+
+  // Compatibilidade com dados salvos em versoes anteriores sem prefixo.
+  if (crypto.subtle) {
+    const sha256 = await hashSenhaSha256(senha);
+    if (sha256 === passwordHash) return true;
+  }
+  return hashSenhaBase64Legado(senha) === passwordHash;
 }
 
 function entrar(idUsuario) {
@@ -64,10 +96,16 @@ async function processarLogin(event) {
     return;
   }
 
-  const senhaHash = await hashSenha(senha);
-  if (senhaHash !== usuario.passwordHash) {
+  const senhaValida = await validarSenhaInformada(senha, usuario.passwordHash);
+  if (!senhaValida) {
     alert("Usuario ou senha invalidos.");
     return;
+  }
+
+  // Se estava em formato legado sem prefixo, salva no novo formato.
+  if (usuario.passwordHash && !usuario.passwordHash.includes(":")) {
+    usuario.passwordHash = await hashSenha(senha);
+    salvarUsuarios(usuarios);
   }
 
   entrar(usuario.id);
