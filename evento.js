@@ -13,6 +13,22 @@ function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
+function segundosParaDuracao(segundos) {
+  const total = Math.max(0, Math.floor(Number(segundos) || 0));
+  const mm = String(Math.floor(total / 60)).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function duracaoParaSegundos(duracaoTexto) {
+  const texto = String(duracaoTexto || "").trim();
+  const match = texto.match(/^(\d{2}):([0-5]\d)$/);
+  if (!match) return null;
+  const minutos = Number(match[1]);
+  const segundos = Number(match[2]);
+  return (minutos * 60) + segundos;
+}
+
 function aplicarVinculoDaConta(evento) {
   let alterado = false;
 
@@ -95,7 +111,8 @@ function preencherInfoEvento() {
   document.getElementById("tipoEvento").value = eventoAtual.tipo || "";
   document.getElementById("limiteJogadores").value = eventoAtual.limiteJogadores || "";
   document.getElementById("limiteGoleiros").value = eventoAtual.limiteGoleiros || "";
-  document.getElementById("duracaoPartida").value = String(eventoAtual.matchDurationMinutes || 10);
+  const duracaoPadraoSec = Math.max(1, Math.round(Number(eventoAtual.matchDurationMinutes || 10) * 60));
+  document.getElementById("duracaoPartida").value = segundosParaDuracao(duracaoPadraoSec);
 
   diaSelecionado = eventoAtual.diaSemana || "";
   atualizarDiaSelecionado();
@@ -286,10 +303,56 @@ function obterJogadorPorId(playerId) {
 }
 
 function obterPartidaAtiva() {
-  if (!eventoAtual.activeMatchId) {
-    return null;
+  const partidaMarcadaComoAtiva = eventoAtual.matches.find(
+    (match) => match.id === eventoAtual.activeMatchId && match.status === "Em andamento"
+  ) || null;
+
+  if (partidaMarcadaComoAtiva) {
+    return partidaMarcadaComoAtiva;
   }
-  return eventoAtual.matches.find((match) => match.id === eventoAtual.activeMatchId) || null;
+
+  const partidaEmAndamento = eventoAtual.matches.find((match) => match.status === "Em andamento") || null;
+
+  if (partidaEmAndamento) {
+    if (eventoAtual.activeMatchId !== partidaEmAndamento.id) {
+      eventoAtual.activeMatchId = partidaEmAndamento.id;
+      salvarEventos();
+    }
+    return partidaEmAndamento;
+  }
+
+  if (eventoAtual.activeMatchId) {
+    eventoAtual.activeMatchId = "";
+    salvarEventos();
+  }
+
+  return null;
+}
+
+function atualizarBloqueioFormularioPartida() {
+  const form = document.getElementById("formCriarPartida");
+  if (!form) return;
+
+  const partidaAtiva = obterPartidaAtiva();
+  const bloqueado = Boolean(partidaAtiva);
+
+  form.querySelectorAll("select, input, button[type='submit']").forEach((el) => {
+    el.disabled = bloqueado;
+  });
+
+  const aviso = document.getElementById("avisoBloqueioPartida");
+  if (!aviso) return;
+
+  if (!bloqueado) {
+    aviso.classList.add("oculto");
+    aviso.textContent = "";
+    return;
+  }
+
+  const nomeTimeA = partidaAtiva.teamASnapshot?.name || "Time A";
+  const nomeTimeB = partidaAtiva.teamBSnapshot?.name || "Time B";
+  aviso.textContent = `Partida em andamento: ${nomeTimeA} x ${nomeTimeB}. Finalize a partida vigente para iniciar outra.`;
+  aviso.classList.remove("oculto");
 }
 
 function formatarDataHora(isoString) {
@@ -573,10 +636,16 @@ function criarPartida(event) {
 
   const teamAId = document.getElementById("selectTimeA").value;
   const teamBId = document.getElementById("selectTimeB").value;
-  const duracaoMinutes = Number(document.getElementById("duracaoPartida").value);
+  const duracaoTexto = document.getElementById("duracaoPartida").value;
+  const durationSec = duracaoParaSegundos(duracaoTexto);
 
   if (!teamAId || !teamBId) {
     alert("Selecione os dois times.");
+    return;
+  }
+
+  if (!Number.isFinite(durationSec) || durationSec <= 0) {
+    alert("Duracao invalida. Use o formato mm:ss, por exemplo 10:00.");
     return;
   }
 
@@ -599,8 +668,6 @@ function criarPartida(event) {
   }
 
   const inicio = new Date().toISOString();
-  const durationSec = duracaoMinutes * 60;
-
   const match = {
     id: gerarId("match"),
     teamAId,
@@ -623,7 +690,7 @@ function criarPartida(event) {
 
   eventoAtual.matches.push(match);
   eventoAtual.activeMatchId = match.id;
-  eventoAtual.matchDurationMinutes = duracaoMinutes;
+  eventoAtual.matchDurationMinutes = durationSec / 60;
 
   salvarEventos();
   renderizarPartidas();
@@ -1263,6 +1330,7 @@ function resetarCampeonato() {
 }
 
 function renderizarPartidas() {
+  atualizarBloqueioFormularioPartida();
   renderizarSelecaoJogadoresTime();
   renderizarTimes();
   renderizarSeletoresDeTimes();

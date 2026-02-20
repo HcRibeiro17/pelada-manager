@@ -142,15 +142,12 @@
               <label for="selectTimeB">Time B</label>
               <select id="selectTimeB" required></select>
 
-              <label for="duracaoPartida">Duracao (minutos)</label>
-              <select id="duracaoPartida">
-                <option value="10">10</option>
-                <option value="15">15</option>
-                <option value="20">20</option>
-              </select>
+              <label for="duracaoPartida">Duracao (mm:ss)</label>
+              <input id="duracaoPartida" type="text" inputmode="numeric" pattern="[0-9]{2}:[0-5][0-9]" placeholder="00:00" value="10:00" required>
 
               <button type="submit">Iniciar partida</button>
             </form>
+            <p id="avisoBloqueioPartida" class="aviso-time oculto"></p>
 
             <div id="painelPartidaAtiva" class="painel-partida"></div>
           </section>
