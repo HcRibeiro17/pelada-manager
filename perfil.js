@@ -39,9 +39,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  const appData = await window.appSupabase.carregarDadosApp();
-  const eventos = appData.eventos || [];
-  const stats = calcularEstatisticas(eventos);
+  const eventosCore = await window.appSupabase.carregarEventosConta();
+  const eventos = await Promise.all((eventosCore || []).map((evento) => window.appSupabase.carregarEventoCompleto(evento.id)));
+  const eventosValidos = eventos.filter(Boolean);
+  const stats = calcularEstatisticas(eventosValidos);
 
   document.getElementById("perfilNome").textContent = `Nome: ${usuarioAtual.nome}`;
   document.getElementById("perfilUsuario").textContent = `Usuario: ${usuarioAtual.username || "-"}`;

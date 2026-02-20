@@ -8,14 +8,14 @@
 <body>
   <main class="conteudo conteudo-pessoas auth-container">
     <h1>Pelada Manager</h1>
-    <p>Entre com email e senha ou crie sua conta.</p>
+    <p>Entre com email/usuario e senha. No primeiro acesso, cadastre-se e confirme o email para ativar sua conta.</p>
 
     <div class="auth-grid">
       <section class="card-pessoas">
         <h2>Entrar</h2>
         <form id="formLogin" class="form-evento">
-          <label for="loginEmail">Email</label>
-          <input id="loginEmail" name="loginEmail" type="email" autocomplete="email" required>
+          <label for="loginIdentificador">Email ou Usuario</label>
+          <input id="loginIdentificador" name="loginIdentificador" type="text" autocomplete="username" required>
 
           <label for="loginSenha">Senha</label>
           <input id="loginSenha" name="loginSenha" type="password" autocomplete="current-password" required>
@@ -39,11 +39,23 @@
           <label for="cadastroSenha">Senha</label>
           <input id="cadastroSenha" name="cadastroSenha" type="password" autocomplete="new-password" required>
 
-          <button type="submit">Cadastrar e entrar</button>
+          <button type="submit">Cadastrar</button>
         </form>
       </section>
     </div>
   </main>
+
+  <div id="modalCadastroSucesso" class="modal-overlay oculto" role="dialog" aria-modal="true" aria-labelledby="modalCadastroTitulo">
+    <div class="modal-card">
+      <h2 id="modalCadastroTitulo">Cadastro realizado</h2>
+      <p>Enviamos um link de confirmacao para seu email. Verifique sua caixa de entrada para ativar a conta antes de entrar.</p>
+      <p id="statusReenvioEmail" class="status-reenvio-email oculto"></p>
+      <div class="modal-acoes">
+        <button id="btnReenviarConfirmacao" type="button" class="btn-secundario">Reenviar email de confirmacao</button>
+        <button id="btnFecharModalCadastro" type="button">Ok, entendi</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>

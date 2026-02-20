@@ -149,40 +149,291 @@ async function deslogar() {
   if (error) throw error;
 }
 
-async function carregarDadosApp() {
+function mapearEventoCore(row) {
+  return {
+    id: row.id,
+    nome: row.nome || "",
+    diaSemana: row.dia_semana || "",
+    horaInicio: row.hora_inicio || "",
+    tipo: row.tipo || "",
+    limiteJogadores: Number(row.limite_jogadores || 0),
+    limiteGoleiros: Number(row.limite_goleiros || 0),
+    matchDurationMinutes: Number(row.match_duration_minutes || 10),
+    activeMatchId: row.active_match_id || "",
+    dataCriacao: row.created_at || new Date().toISOString(),
+    ownerUserId: row.owner_user_id || "",
+    ownerUsername: row.owner_username || "",
+    ownerEmail: row.owner_email || "",
+    jogadores: [],
+    times: [],
+    matches: []
+  };
+}
+
+function normalizarArray(valor) {
+  return Array.isArray(valor) ? valor : [];
+}
+
+async function carregarEventosConta() {
   const sb = getSupabaseClient();
   const user = await obterUsuarioAtualAuth();
   if (!user) throw new Error("Usuario nao autenticado.");
 
-  const { data, error } = await sb
-    .from("app_user_data")
-    .select("payload")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { data, error } = await sb.from("events")
+    .select("id,nome,dia_semana,hora_inicio,tipo,limite_jogadores,limite_goleiros,match_duration_minutes,active_match_id,created_at,owner_user_id,owner_username,owner_email")
+    .eq("owner_user_id", user.id)
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
-  if (!data || !data.payload) return { eventos: [] };
-  if (!Array.isArray(data.payload.eventos)) return { eventos: [] };
-  return data.payload;
+  return (data || []).map(mapearEventoCore);
+}
+
+async function carregarEventoCompleto(eventId) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const { data: eventoRow, error: eventoError } = await sb.from("events")
+    .select("id,nome,dia_semana,hora_inicio,tipo,limite_jogadores,limite_goleiros,match_duration_minutes,active_match_id,created_at,owner_user_id,owner_username,owner_email")
+    .eq("id", eventId)
+    .eq("owner_user_id", user.id)
+    .maybeSingle();
+
+  if (eventoError) throw eventoError;
+  if (!eventoRow) return null;
+
+  const [playersResp, teamsResp, matchesResp, goalsResp] = await Promise.all([
+    sb.from("event_players")
+      .select("id,nome,posicao,nivel,mensalista,gols_total,assists_total")
+      .eq("event_id", eventId)
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: true }),
+    sb.from("event_teams")
+      .select("id,name,player_ids,created_at,updated_at")
+      .eq("event_id", eventId)
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: true }),
+    sb.from("event_matches")
+      .select("id,team_a_id,team_b_id,team_a_snapshot,team_b_snapshot,score,created_at,start_time,end_time,duration_configured_sec,remaining_sec,elapsed_sec,duration_real_sec,status,is_clock_running,last_tick_at,history_immutable")
+      .eq("event_id", eventId)
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: true }),
+    sb.from("event_match_goals")
+      .select("id,match_id,player_id,player_name,assist_player_id,assist_player_name,team_id,team_name,timestamp,elapsed_sec")
+      .eq("event_id", eventId)
+      .eq("owner_user_id", user.id)
+      .order("timestamp", { ascending: true })
+  ]);
+
+  if (playersResp.error) throw playersResp.error;
+  if (teamsResp.error) throw teamsResp.error;
+  if (matchesResp.error) throw matchesResp.error;
+  if (goalsResp.error) throw goalsResp.error;
+
+  const evento = mapearEventoCore(eventoRow);
+
+  evento.jogadores = (playersResp.data || []).map((p) => ({
+    id: p.id,
+    nome: p.nome,
+    posicao: p.posicao,
+    nivel: Number(p.nivel || 0),
+    mensalista: Boolean(p.mensalista),
+    golsTotal: Number(p.gols_total || 0),
+    assistsTotal: Number(p.assists_total || 0)
+  }));
+
+  evento.times = (teamsResp.data || []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    playerIds: normalizarArray(t.player_ids),
+    createdAt: t.created_at,
+    updatedAt: t.updated_at
+  }));
+
+  const goalsByMatch = {};
+  (goalsResp.data || []).forEach((g) => {
+    if (!goalsByMatch[g.match_id]) goalsByMatch[g.match_id] = [];
+    goalsByMatch[g.match_id].push({
+      id: g.id,
+      playerId: g.player_id,
+      playerName: g.player_name,
+      assistPlayerId: g.assist_player_id || "",
+      assistPlayerName: g.assist_player_name || "",
+      teamId: g.team_id,
+      teamName: g.team_name,
+      timestamp: g.timestamp,
+      elapsedSec: Number(g.elapsed_sec || 0)
+    });
+  });
+
+  evento.matches = (matchesResp.data || []).map((m) => ({
+    id: m.id,
+    teamAId: m.team_a_id,
+    teamBId: m.team_b_id,
+    teamASnapshot: m.team_a_snapshot || null,
+    teamBSnapshot: m.team_b_snapshot || null,
+    goals: goalsByMatch[m.id] || [],
+    createdAt: m.created_at,
+    startTime: m.start_time,
+    endTime: m.end_time,
+    durationConfiguredSec: Number(m.duration_configured_sec || 0),
+    remainingSec: Number(m.remaining_sec || 0),
+    elapsedSec: Number(m.elapsed_sec || 0),
+    durationRealSec: Number(m.duration_real_sec || 0),
+    status: m.status || "Em andamento",
+    isClockRunning: Boolean(m.is_clock_running),
+    lastTickAt: m.last_tick_at || null,
+    score: m.score || { teamA: 0, teamB: 0 },
+    historyImmutable: Boolean(m.history_immutable)
+  }));
+
+  return evento;
+}
+
+async function salvarEventoCompleto(eventoInput) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const evento = eventoInput && typeof eventoInput === "object" ? { ...eventoInput } : {};
+  if (!evento.id) throw new Error("Evento invalido: id ausente.");
+
+  const coreRow = {
+    id: evento.id,
+    owner_user_id: user.id,
+    owner_username: evento.ownerUsername || "",
+    owner_email: evento.ownerEmail || "",
+    nome: evento.nome || "",
+    dia_semana: evento.diaSemana || "",
+    hora_inicio: evento.horaInicio || "",
+    tipo: evento.tipo || "",
+    limite_jogadores: Number(evento.limiteJogadores || 0),
+    limite_goleiros: Number(evento.limiteGoleiros || 0),
+    match_duration_minutes: Number(evento.matchDurationMinutes || 10),
+    active_match_id: evento.activeMatchId || ""
+  };
+
+  const { error: coreError } = await sb.from("events").upsert(coreRow, { onConflict: "id" });
+  if (coreError) throw coreError;
+
+  const { error: delPlayersError } = await sb.from("event_players").delete().eq("event_id", evento.id).eq("owner_user_id", user.id);
+  if (delPlayersError) throw delPlayersError;
+  const { error: delTeamsError } = await sb.from("event_teams").delete().eq("event_id", evento.id).eq("owner_user_id", user.id);
+  if (delTeamsError) throw delTeamsError;
+  const { error: delMatchesError } = await sb.from("event_matches").delete().eq("event_id", evento.id).eq("owner_user_id", user.id);
+  if (delMatchesError) throw delMatchesError;
+  const { error: delGoalsError } = await sb.from("event_match_goals").delete().eq("event_id", evento.id).eq("owner_user_id", user.id);
+  if (delGoalsError) throw delGoalsError;
+
+  const jogadores = normalizarArray(evento.jogadores).map((j) => ({
+    id: j.id,
+    event_id: evento.id,
+    owner_user_id: user.id,
+    nome: j.nome || "",
+    posicao: j.posicao || "",
+    nivel: Number(j.nivel || 0),
+    mensalista: Boolean(j.mensalista),
+    gols_total: Number(j.golsTotal || 0),
+    assists_total: Number(j.assistsTotal || 0)
+  }));
+
+  if (jogadores.length > 0) {
+    const { error: insPlayersError } = await sb.from("event_players").insert(jogadores);
+    if (insPlayersError) throw insPlayersError;
+  }
+
+  const times = normalizarArray(evento.times).map((t) => ({
+    id: t.id,
+    event_id: evento.id,
+    owner_user_id: user.id,
+    name: t.name || "",
+    player_ids: normalizarArray(t.playerIds),
+    created_at: t.createdAt || new Date().toISOString(),
+    updated_at: t.updatedAt || new Date().toISOString()
+  }));
+
+  if (times.length > 0) {
+    const { error: insTeamsError } = await sb.from("event_teams").insert(times);
+    if (insTeamsError) throw insTeamsError;
+  }
+
+  const matches = normalizarArray(evento.matches).map((m) => ({
+    id: m.id,
+    event_id: evento.id,
+    owner_user_id: user.id,
+    team_a_id: m.teamAId || "",
+    team_b_id: m.teamBId || "",
+    team_a_snapshot: m.teamASnapshot || null,
+    team_b_snapshot: m.teamBSnapshot || null,
+    score: m.score || { teamA: 0, teamB: 0 },
+    created_at: m.createdAt || new Date().toISOString(),
+    start_time: m.startTime || null,
+    end_time: m.endTime || null,
+    duration_configured_sec: Number(m.durationConfiguredSec || 0),
+    remaining_sec: Number(m.remainingSec || 0),
+    elapsed_sec: Number(m.elapsedSec || 0),
+    duration_real_sec: Number(m.durationRealSec || 0),
+    status: m.status || "Em andamento",
+    is_clock_running: Boolean(m.isClockRunning),
+    last_tick_at: m.lastTickAt || null,
+    history_immutable: Boolean(m.historyImmutable)
+  }));
+
+  if (matches.length > 0) {
+    const { error: insMatchesError } = await sb.from("event_matches").insert(matches);
+    if (insMatchesError) throw insMatchesError;
+  }
+
+  const gols = [];
+  normalizarArray(evento.matches).forEach((m) => {
+    normalizarArray(m.goals).forEach((g) => {
+      gols.push({
+        id: g.id,
+        event_id: evento.id,
+        owner_user_id: user.id,
+        match_id: m.id,
+        player_id: g.playerId || "",
+        player_name: g.playerName || "",
+        assist_player_id: g.assistPlayerId || "",
+        assist_player_name: g.assistPlayerName || "",
+        team_id: g.teamId || "",
+        team_name: g.teamName || "",
+        timestamp: g.timestamp || new Date().toISOString(),
+        elapsed_sec: Number(g.elapsedSec || 0)
+      });
+    });
+  });
+
+  if (gols.length > 0) {
+    const { error: insGoalsError } = await sb.from("event_match_goals").insert(gols);
+    if (insGoalsError) throw insGoalsError;
+  }
+}
+
+async function excluirEventoConta(eventId) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const { error } = await sb.from("events")
+    .delete()
+    .eq("id", eventId)
+    .eq("owner_user_id", user.id);
+  if (error) throw error;
+}
+
+// Compatibilidade: legado app_user_data
+async function carregarDadosApp() {
+  const eventos = await carregarEventosConta();
+  return { eventos };
 }
 
 async function salvarDadosApp(payload) {
-  const sb = getSupabaseClient();
-  const user = await obterUsuarioAtualAuth();
-  if (!user) throw new Error("Usuario nao autenticado.");
-
   const dados = payload && typeof payload === "object" ? payload : {};
-  if (!Array.isArray(dados.eventos)) dados.eventos = [];
-
-  const { error } = await sb.from("app_user_data").upsert(
-    {
-      user_id: user.id,
-      payload: dados
-    },
-    { onConflict: "user_id" }
-  );
-
-  if (error) throw error;
+  const eventos = normalizarArray(dados.eventos);
+  for (const evento of eventos) {
+    await salvarEventoCompleto(evento);
+  }
 }
 
 window.appSupabase = {
@@ -195,6 +446,10 @@ window.appSupabase = {
   loginComUsernameSenha,
   cadastrarComUsernameSenha,
   deslogar,
+  carregarEventosConta,
+  carregarEventoCompleto,
+  salvarEventoCompleto,
+  excluirEventoConta,
   carregarDadosApp,
   salvarDadosApp
 };

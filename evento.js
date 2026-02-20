@@ -1,5 +1,4 @@
 
-let eventos = [];
 const params = new URLSearchParams(window.location.search);
 const eventoId = params.get("id");
 let eventoAtual = null;
@@ -9,15 +8,35 @@ let usuarioAtual = null;
 let selectedHistoryMatchId = "";
 let matchIntervalId = null;
 let salvarCounter = 0;
-let appData = { eventos: [] };
 
 function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
+function aplicarVinculoDaConta(evento) {
+  let alterado = false;
+
+  if (usuarioAtual && evento.ownerUserId !== usuarioAtual.id) {
+    evento.ownerUserId = usuarioAtual.id;
+    alterado = true;
+  }
+
+  if (usuarioAtual && evento.ownerUsername !== (usuarioAtual.username || "")) {
+    evento.ownerUsername = usuarioAtual.username || "";
+    alterado = true;
+  }
+
+  if (usuarioAtual && evento.ownerEmail !== (usuarioAtual.email || "")) {
+    evento.ownerEmail = usuarioAtual.email || "";
+    alterado = true;
+  }
+
+  return alterado;
+}
+
 function salvarEventos() {
-  appData.eventos = eventos;
-  return window.appSupabase.salvarDadosApp(appData);
+  if (!eventoAtual) return Promise.resolve();
+  return window.appSupabase.salvarEventoCompleto(eventoAtual);
 }
 
 async function trocarConta() {
@@ -53,8 +72,8 @@ function inicializarEstruturaEvento() {
   }
 }
 
-function carregarEvento() {
-  eventoAtual = eventos.find((evento) => evento.id === eventoId) || null;
+async function carregarEvento() {
+  eventoAtual = await window.appSupabase.carregarEventoCompleto(eventoId);
 
   if (!eventoAtual) {
     alert("Evento nao encontrado.");
@@ -63,7 +82,9 @@ function carregarEvento() {
   }
 
   inicializarEstruturaEvento();
-  salvarEventos();
+  if (aplicarVinculoDaConta(eventoAtual)) {
+    salvarEventos();
+  }
   return true;
 }
 
@@ -1296,16 +1317,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  appData = await window.appSupabase.carregarDadosApp();
-  eventos = appData.eventos || [];
-
   if (!eventoId) {
     alert("Evento invalido.");
     window.location.href = "index.html";
     return;
   }
 
-  if (!carregarEvento()) {
+  if (!(await carregarEvento())) {
     return;
   }
 

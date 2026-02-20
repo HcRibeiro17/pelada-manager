@@ -1,26 +1,60 @@
 let eventos = [];
 let diaSelecionado = "";
 let usuarioAtual = null;
-let appData = { eventos: [] };
 
 function gerarIdEvento() {
   return `evt_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
-async function carregarEventosDoUsuario() {
-  appData = await window.appSupabase.carregarDadosApp();
-  return appData.eventos || [];
+function eventoPertenceAoUsuario(evento) {
+  if (!usuarioAtual) return true;
+  const ownerId = String(evento?.ownerUserId || "").trim();
+  return !ownerId || ownerId === usuarioAtual.id;
 }
 
-function salvarEventos() {
-  appData.eventos = eventos;
-  return window.appSupabase.salvarDadosApp(appData);
-}
-
-function normalizarEventos() {
+function aplicarVinculoDaConta(evento) {
+  const atualizado = { ...evento };
   let alterado = false;
 
-  eventos = eventos.map((evento) => {
+  if (usuarioAtual && atualizado.ownerUserId !== usuarioAtual.id) {
+    atualizado.ownerUserId = usuarioAtual.id;
+    alterado = true;
+  }
+
+  if (usuarioAtual && atualizado.ownerUsername !== (usuarioAtual.username || "")) {
+    atualizado.ownerUsername = usuarioAtual.username || "";
+    alterado = true;
+  }
+
+  if (usuarioAtual && atualizado.ownerEmail !== (usuarioAtual.email || "")) {
+    atualizado.ownerEmail = usuarioAtual.email || "";
+    alterado = true;
+  }
+
+  return { evento: atualizado, alterado };
+}
+
+async function carregarEventosDoUsuario() {
+  const lista = await window.appSupabase.carregarEventosConta();
+  return (lista || []).filter(eventoPertenceAoUsuario);
+}
+
+async function salvarEventos() {
+  for (const evento of eventos) {
+    await window.appSupabase.salvarEventoCompleto(evento);
+  }
+}
+
+async function normalizarEventos() {
+  let alterado = false;
+  const filtrados = [];
+
+  eventos.forEach((evento) => {
+    if (!eventoPertenceAoUsuario(evento)) {
+      alterado = true;
+      return;
+    }
+
     const atualizado = { ...evento };
 
     if (!atualizado.id) {
@@ -33,11 +67,18 @@ function normalizarEventos() {
       alterado = true;
     }
 
-    return atualizado;
+    const resultado = aplicarVinculoDaConta(atualizado);
+    if (resultado.alterado) {
+      alterado = true;
+    }
+
+    filtrados.push(resultado.evento);
   });
 
+  eventos = filtrados;
+
   if (alterado) {
-    salvarEventos();
+    await salvarEventos();
   }
 }
 
@@ -72,8 +113,10 @@ function inicializarDiasSemana() {
 }
 
 async function excluirEvento(indice) {
+  const evento = eventos[indice];
+  if (!evento) return;
+  await window.appSupabase.excluirEventoConta(evento.id);
   eventos.splice(indice, 1);
-  await salvarEventos();
   listarEventos();
 }
 
@@ -157,7 +200,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   eventos = await carregarEventosDoUsuario();
-  normalizarEventos();
+  await normalizarEventos();
   inicializarDiasSemana();
 
   document.getElementById("cancelarEvento").addEventListener("click", fecharFormularioEvento);
@@ -181,7 +224,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    eventos.push({
+    const novoEvento = {
       id: gerarIdEvento(),
       nome,
       diaSemana: diaSelecionado,
@@ -190,10 +233,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       limiteJogadores,
       limiteGoleiros,
       jogadores: [],
-      dataCriacao: new Date().toISOString()
-    });
+      dataCriacao: new Date().toISOString(),
+      ownerUserId: usuarioAtual.id,
+      ownerUsername: usuarioAtual.username || "",
+      ownerEmail: usuarioAtual.email || ""
+    };
 
-    await salvarEventos();
+    await window.appSupabase.salvarEventoCompleto(novoEvento);
+    eventos.unshift(novoEvento);
     listarEventos();
     fecharFormularioEvento();
   });

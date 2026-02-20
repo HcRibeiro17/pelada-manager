@@ -609,6 +609,66 @@ body.menu-aberto .conteudo {
   background: #fff;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.modal-overlay.oculto {
+  display: none;
+}
+
+.modal-card {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-sizing: border-box;
+  border: 1px solid #d8d8d8;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+}
+
+.modal-card h2 {
+  margin: 0 0 10px;
+}
+
+.modal-card p {
+  margin: 0 0 16px;
+  line-height: 1.4;
+}
+
+.modal-card button {
+  width: 100%;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.modal-acoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-secundario {
+  border: 1px solid #b8b8b8;
+  background: #fff;
+}
+
+.status-reenvio-email {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: #f8f8f8;
+  font-size: 14px;
+}
+
 @media (max-width: 760px) {
   .listas-jogadores,
   .partidas-grid,
