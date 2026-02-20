@@ -71,6 +71,23 @@ body.menu-aberto .conteudo {
   fill: #fff;
 }
 
+.topo-acoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-tema {
+  min-width: 52px;
+  height: 36px;
+  border: 1px solid #6f6f6f;
+  background: #2f2f2f;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
 .menu-lateral {
   position: fixed;
   top: 0;
@@ -420,6 +437,35 @@ body.menu-aberto .conteudo {
   padding: 10px;
 }
 
+.paginacao-lista {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.paginacao-lista-info {
+  font-size: 13px;
+  color: #555;
+  text-align: center;
+  flex: 1;
+}
+
+.btn-paginacao {
+  border: 1px solid #c7c7c7;
+  background: #fff;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  min-width: 86px;
+}
+
+.btn-paginacao:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .partidas-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -669,6 +715,99 @@ body.menu-aberto .conteudo {
   font-size: 14px;
 }
 
+.modal-times-aleatorios {
+  width: min(680px, 100%);
+}
+
+.modal-times-aleatorios input[type="number"] {
+  padding: 8px;
+  border: 1px solid #b8b8b8;
+  border-radius: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+}
+
+.modal-times-aleatorios .selecao-jogadores-time {
+  max-height: 260px;
+}
+
+.modal-acoes-linha {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+body.modo-noturno .modal-times-aleatorios input[type="number"] {
+  background: #151515;
+  border-color: #353535;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .modal-times-aleatorios .selecao-jogadores-time {
+  background: #151515;
+  border-color: #353535;
+}
+
+body.modo-noturno {
+  background: #121212;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .topo {
+  background: #0f0f0f;
+}
+
+body.modo-noturno .menu-lateral {
+  background: #1b1b1b;
+}
+
+body.modo-noturno .menu-lateral a:hover {
+  background: #2a2a2a;
+}
+
+body.modo-noturno .menu-rodape {
+  background: #181818;
+  border-top-color: #2d2d2d;
+}
+
+body.modo-noturno .form-evento-container,
+body.modo-noturno #listaEventos li {
+  background: #1e1e1e;
+  border-color: #323232;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .form-evento input,
+body.modo-noturno .form-evento select {
+  background: #151515;
+  border-color: #353535;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .paginacao-lista-info {
+  color: #bcbcbc;
+}
+
+body.modo-noturno .btn-paginacao {
+  background: #171717;
+  border-color: #333;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .dia-btn {
+  background: #171717;
+  border-color: #3a3a3a;
+  color: #e9e9e9;
+}
+
+body.modo-noturno .dia-btn.selecionado {
+  background: #2f8f47;
+  border-color: #2f8f47;
+  color: #fff;
+}
+
 @media (max-width: 760px) {
   .listas-jogadores,
   .partidas-grid,
@@ -679,6 +818,19 @@ body.menu-aberto .conteudo {
   }
 
   .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .paginacao-lista {
+    flex-wrap: wrap;
+  }
+
+  .paginacao-lista-info {
+    width: 100%;
+    order: -1;
+  }
+
+  .modal-acoes-linha {
     grid-template-columns: 1fr;
   }
 

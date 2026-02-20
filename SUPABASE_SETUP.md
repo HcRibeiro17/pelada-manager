@@ -48,8 +48,12 @@ create table if not exists public.event_players (
   mensalista boolean not null default false,
   gols_total integer not null default 0,
   assists_total integer not null default 0,
+  wins_total integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.event_players
+add column if not exists wins_total integer not null default 0;
 
 create table if not exists public.event_teams (
   id text primary key,
@@ -98,6 +102,15 @@ create table if not exists public.event_match_goals (
   elapsed_sec integer not null default 0
 );
 
+create table if not exists public.event_championships (
+  id text primary key,
+  event_id text not null references public.events(id) on delete cascade,
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null default 'Campeonato',
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_events_owner_user_id on public.events(owner_user_id);
 create index if not exists idx_event_players_event_id on public.event_players(event_id);
 create index if not exists idx_event_players_owner_user_id on public.event_players(owner_user_id);
@@ -108,12 +121,15 @@ create index if not exists idx_event_matches_owner_user_id on public.event_match
 create index if not exists idx_event_match_goals_event_id on public.event_match_goals(event_id);
 create index if not exists idx_event_match_goals_match_id on public.event_match_goals(match_id);
 create index if not exists idx_event_match_goals_owner_user_id on public.event_match_goals(owner_user_id);
+create index if not exists idx_event_championships_event_id on public.event_championships(event_id);
+create index if not exists idx_event_championships_owner_user_id on public.event_championships(owner_user_id);
 
 alter table public.events enable row level security;
 alter table public.event_players enable row level security;
 alter table public.event_teams enable row level security;
 alter table public.event_matches enable row level security;
 alter table public.event_match_goals enable row level security;
+alter table public.event_championships enable row level security;
 
 drop policy if exists "events_select_own" on public.events;
 create policy "events_select_own"
@@ -259,6 +275,35 @@ on public.event_match_goals
 for delete
 to authenticated
 using (auth.uid() = owner_user_id);
+
+drop policy if exists "event_championships_select_own" on public.event_championships;
+create policy "event_championships_select_own"
+on public.event_championships
+for select
+to authenticated
+using (auth.uid() = owner_user_id);
+
+drop policy if exists "event_championships_insert_own" on public.event_championships;
+create policy "event_championships_insert_own"
+on public.event_championships
+for insert
+to authenticated
+with check (auth.uid() = owner_user_id);
+
+drop policy if exists "event_championships_update_own" on public.event_championships;
+create policy "event_championships_update_own"
+on public.event_championships
+for update
+to authenticated
+using (auth.uid() = owner_user_id)
+with check (auth.uid() = owner_user_id);
+
+drop policy if exists "event_championships_delete_own" on public.event_championships;
+create policy "event_championships_delete_own"
+on public.event_championships
+for delete
+to authenticated
+using (auth.uid() = owner_user_id);
 ```
 
 ## 4) Auth usado no app
@@ -272,7 +317,7 @@ using (auth.uid() = owner_user_id);
 2. Criar conta com `nome + usuario + email + senha`
 3. Entrar
 4. Criar/editar eventos normalmente
-5. Dados ficam no banco (tabelas `events`, `event_players`, `event_teams`, `event_matches`, `event_match_goals`)
+5. Dados ficam no banco (tabelas `events`, `event_players`, `event_teams`, `event_matches`, `event_match_goals`, `event_championships`)
 
 ## Observacoes
 - O projeto nao usa `localStorage` como origem dos dados.

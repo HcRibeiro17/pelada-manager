@@ -6,8 +6,16 @@ let diaSelecionado = "";
 let nivelSelecionado = 0;
 let usuarioAtual = null;
 let selectedHistoryMatchId = "";
+let selectedChampionshipId = "";
 let matchIntervalId = null;
 let salvarCounter = 0;
+let partidasCarregadas = false;
+let cargaPartidasPromise = null;
+let campeonatos = [];
+let campeonatosCarregados = false;
+let cargaCampeonatosPromise = null;
+const estadoPaginacaoListas = {};
+let resizePaginacaoTimeoutId = null;
 
 function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -52,7 +60,60 @@ function aplicarVinculoDaConta(evento) {
 
 function salvarEventos() {
   if (!eventoAtual) return Promise.resolve();
+  if (!partidasCarregadas) {
+    return garantirPartidasCarregadas().then(() => window.appSupabase.salvarEventoCompleto(eventoAtual));
+  }
   return window.appSupabase.salvarEventoCompleto(eventoAtual);
+}
+
+async function garantirPartidasCarregadas() {
+  if (partidasCarregadas) return;
+
+  if (cargaPartidasPromise) {
+    await cargaPartidasPromise;
+    return;
+  }
+
+  cargaPartidasPromise = (async () => {
+    const dadosPartidas = await window.appSupabase.carregarDadosPartidasEvento(eventoId);
+    if (!dadosPartidas) {
+      partidasCarregadas = true;
+      return;
+    }
+
+    eventoAtual.matches = Array.isArray(dadosPartidas.matches) ? dadosPartidas.matches : [];
+    eventoAtual.activeMatchId = dadosPartidas.activeMatchId || "";
+    if (Number.isFinite(dadosPartidas.matchDurationMinutes)) {
+      eventoAtual.matchDurationMinutes = dadosPartidas.matchDurationMinutes;
+    }
+    partidasCarregadas = true;
+  })();
+
+  try {
+    await cargaPartidasPromise;
+  } finally {
+    cargaPartidasPromise = null;
+  }
+}
+
+async function garantirCampeonatosCarregados() {
+  if (campeonatosCarregados) return;
+
+  if (cargaCampeonatosPromise) {
+    await cargaCampeonatosPromise;
+    return;
+  }
+
+  cargaCampeonatosPromise = (async () => {
+    campeonatos = await window.appSupabase.carregarCampeonatosEvento(eventoId);
+    campeonatosCarregados = true;
+  })();
+
+  try {
+    await cargaCampeonatosPromise;
+  } finally {
+    cargaCampeonatosPromise = null;
+  }
 }
 
 async function trocarConta() {
@@ -68,7 +129,8 @@ function inicializarEstruturaEvento() {
   eventoAtual.jogadores = eventoAtual.jogadores.map((jogador) => ({
     ...jogador,
     golsTotal: Number.isFinite(jogador.golsTotal) ? jogador.golsTotal : 0,
-    assistsTotal: Number.isFinite(jogador.assistsTotal) ? jogador.assistsTotal : 0
+    assistsTotal: Number.isFinite(jogador.assistsTotal) ? jogador.assistsTotal : 0,
+    vitoriasTotal: Number.isFinite(jogador.vitoriasTotal) ? jogador.vitoriasTotal : 0
   }));
 
   if (!Array.isArray(eventoAtual.times)) {
@@ -89,7 +151,7 @@ function inicializarEstruturaEvento() {
 }
 
 async function carregarEvento() {
-  eventoAtual = await window.appSupabase.carregarEventoCompleto(eventoId);
+  eventoAtual = await window.appSupabase.carregarEventoBasico(eventoId);
 
   if (!eventoAtual) {
     alert("Evento nao encontrado.");
@@ -99,8 +161,9 @@ async function carregarEvento() {
 
   inicializarEstruturaEvento();
   if (aplicarVinculoDaConta(eventoAtual)) {
-    salvarEventos();
+    window.appSupabase.salvarEventoBasico(eventoAtual);
   }
+  partidasCarregadas = false;
   return true;
 }
 
@@ -136,7 +199,7 @@ function inicializarDiasSemana() {
 
 function inicializarAbas() {
   document.querySelectorAll(".aba-btn").forEach((botao) => {
-    botao.addEventListener("click", () => {
+    botao.addEventListener("click", async () => {
       const aba = botao.dataset.aba;
 
       document.querySelectorAll(".aba-btn").forEach((b) => b.classList.remove("ativa"));
@@ -146,7 +209,25 @@ function inicializarAbas() {
       document.getElementById(`aba-${aba}`).classList.add("ativa");
 
       if (aba === "partidas") {
+        try {
+          await garantirPartidasCarregadas();
+        } catch (error) {
+          alert(`Falha ao carregar partidas: ${error.message || error}`);
+          return;
+        }
         renderizarPartidas();
+        retomarCronometroSeNecessario();
+        return;
+      }
+
+      if (aba === "campeonatos") {
+        try {
+          await garantirCampeonatosCarregados();
+        } catch (error) {
+          alert(`Falha ao carregar peladas: ${error.message || error}`);
+          return;
+        }
+        renderizarCampeonatos();
       }
     });
   });
@@ -178,7 +259,7 @@ function salvarInfoEvento(event) {
   eventoAtual.limiteJogadores = limiteJogadores;
   eventoAtual.limiteGoleiros = limiteGoleiros;
 
-  salvarEventos();
+  window.appSupabase.salvarEventoBasico(eventoAtual);
   document.getElementById("tituloEvento").textContent = nome;
   alert("Informacoes do evento atualizadas.");
 }
@@ -223,7 +304,8 @@ function adicionarJogador(event) {
     nivel: nivelSelecionado,
     mensalista,
     golsTotal: 0,
-    assistsTotal: 0
+    assistsTotal: 0,
+    vitoriasTotal: 0
   });
 
   salvarEventos();
@@ -254,7 +336,7 @@ function linhaJogador(jogador) {
   const li = document.createElement("li");
 
   const texto = document.createElement("span");
-  texto.textContent = `${jogador.nome} | ${jogador.posicao} | ${"\u2605".repeat(jogador.nivel)} | Gols: ${jogador.golsTotal || 0} | Assists: ${jogador.assistsTotal || 0}`;
+  texto.textContent = `${jogador.nome} | ${jogador.posicao} | ${"\u2605".repeat(jogador.nivel)} | Vitorias: ${jogador.vitoriasTotal || 0} | Gols: ${jogador.golsTotal || 0} | Assists: ${jogador.assistsTotal || 0}`;
 
   const btnRemover = document.createElement("button");
   btnRemover.type = "button";
@@ -268,30 +350,38 @@ function linhaJogador(jogador) {
 }
 
 function renderizarJogadores() {
-  const listaMensalistas = document.getElementById("listaMensalistasEvento");
-  const listaNaoMensalistas = document.getElementById("listaNaoMensalistasEvento");
-
-  listaMensalistas.innerHTML = "";
-  listaNaoMensalistas.innerHTML = "";
-
   const mensalistas = eventoAtual.jogadores.filter((jogador) => jogador.mensalista);
   const naoMensalistas = eventoAtual.jogadores.filter((jogador) => !jogador.mensalista);
 
-  if (mensalistas.length === 0) {
-    const vazio = document.createElement("li");
-    vazio.textContent = "Nenhum jogador mensalista cadastrado.";
-    listaMensalistas.appendChild(vazio);
-  } else {
-    mensalistas.forEach((jogador) => listaMensalistas.appendChild(linhaJogador(jogador)));
-  }
+  renderizarListaPaginada({
+    listId: "listaMensalistasEvento",
+    itens: mensalistas,
+    mensagemVazia: "Nenhum jogador mensalista cadastrado.",
+    onChangePagina: renderizarJogadores,
+    config: {
+      min: 4,
+      max: 10,
+      alturaItemDesktop: 68,
+      alturaItemMobile: 86,
+      fatorViewport: 0.33
+    },
+    renderItem: (jogador) => linhaJogador(jogador)
+  });
 
-  if (naoMensalistas.length === 0) {
-    const vazio = document.createElement("li");
-    vazio.textContent = "Nenhum jogador nao mensalista cadastrado.";
-    listaNaoMensalistas.appendChild(vazio);
-  } else {
-    naoMensalistas.forEach((jogador) => listaNaoMensalistas.appendChild(linhaJogador(jogador)));
-  }
+  renderizarListaPaginada({
+    listId: "listaNaoMensalistasEvento",
+    itens: naoMensalistas,
+    mensagemVazia: "Nenhum jogador nao mensalista cadastrado.",
+    onChangePagina: renderizarJogadores,
+    config: {
+      min: 4,
+      max: 10,
+      alturaItemDesktop: 68,
+      alturaItemMobile: 86,
+      fatorViewport: 0.33
+    },
+    renderItem: (jogador) => linhaJogador(jogador)
+  });
 }
 
 function obterTimePorId(teamId) {
@@ -368,6 +458,123 @@ function formatarSegundos(segundos) {
   return `${mm}:${ss}`;
 }
 
+function calcularLimiteItensPorPagina(config = {}) {
+  const largura = window.innerWidth || document.documentElement.clientWidth || 1280;
+  const altura = window.innerHeight || document.documentElement.clientHeight || 800;
+  const proporcaoTela = largura / Math.max(altura, 1);
+  const min = Number.isFinite(config.min) ? Number(config.min) : 4;
+  const max = Number.isFinite(config.max) ? Number(config.max) : 12;
+  const alturaItem = largura <= 760
+    ? (Number.isFinite(config.alturaItemMobile) ? Number(config.alturaItemMobile) : 84)
+    : (Number.isFinite(config.alturaItemDesktop) ? Number(config.alturaItemDesktop) : 66);
+  const fatorViewport = Number.isFinite(config.fatorViewport) ? Number(config.fatorViewport) : 0.42;
+
+  let limite = Math.floor((altura * fatorViewport) / Math.max(alturaItem, 1));
+  if (proporcaoTela < 0.8) limite -= 1;
+  if (proporcaoTela > 1.7) limite += 1;
+  if (!Number.isFinite(limite) || limite < 1) limite = min;
+
+  return Math.max(min, Math.min(max, limite));
+}
+
+function obterContainerPaginacao(listId, lista) {
+  const containerId = `paginacao-${listId}`;
+  let container = document.getElementById(containerId);
+
+  if (!container) {
+    container = document.createElement("div");
+    container.id = containerId;
+    container.className = "paginacao-lista";
+    container.dataset.targetList = listId;
+    lista.insertAdjacentElement("afterend", container);
+  }
+
+  return container;
+}
+
+function limparPaginacaoLista(listId) {
+  const container = document.getElementById(`paginacao-${listId}`);
+  if (!container) return;
+  container.innerHTML = "";
+  container.classList.add("oculto");
+}
+
+function renderizarListaPaginada({ listId, itens, mensagemVazia, renderItem, onChangePagina, config = {} }) {
+  const lista = document.getElementById(listId);
+  if (!lista) {
+    return { itensPagina: [], paginaAtual: 1, totalPaginas: 1 };
+  }
+
+  const itensLista = Array.isArray(itens) ? itens : [];
+  lista.innerHTML = "";
+
+  if (itensLista.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = mensagemVazia || "Nenhum registro encontrado.";
+    lista.appendChild(li);
+    limparPaginacaoLista(listId);
+    return { itensPagina: [], paginaAtual: 1, totalPaginas: 1 };
+  }
+
+  const limitePorPagina = calcularLimiteItensPorPagina(config);
+  const totalPaginas = Math.max(1, Math.ceil(itensLista.length / limitePorPagina));
+  const paginaArmazenada = Number(estadoPaginacaoListas[listId] || 1);
+  const paginaAtual = Math.max(1, Math.min(totalPaginas, paginaArmazenada));
+  estadoPaginacaoListas[listId] = paginaAtual;
+
+  const inicio = (paginaAtual - 1) * limitePorPagina;
+  const fim = inicio + limitePorPagina;
+  const itensPagina = itensLista.slice(inicio, fim);
+
+  itensPagina.forEach((item, indexPagina) => {
+    const itemGlobalIndex = inicio + indexPagina;
+    const li = renderItem(item, itemGlobalIndex);
+    if (li) lista.appendChild(li);
+  });
+
+  const paginacao = obterContainerPaginacao(listId, lista);
+  if (totalPaginas <= 1) {
+    paginacao.innerHTML = "";
+    paginacao.classList.add("oculto");
+    return { itensPagina, paginaAtual, totalPaginas };
+  }
+
+  paginacao.classList.remove("oculto");
+  paginacao.innerHTML = "";
+
+  const btnAnterior = document.createElement("button");
+  btnAnterior.type = "button";
+  btnAnterior.className = "btn-paginacao";
+  btnAnterior.textContent = "Anterior";
+  btnAnterior.disabled = paginaAtual <= 1;
+  btnAnterior.addEventListener("click", () => {
+    if (paginaAtual <= 1) return;
+    estadoPaginacaoListas[listId] = paginaAtual - 1;
+    if (typeof onChangePagina === "function") onChangePagina();
+  });
+
+  const info = document.createElement("span");
+  info.className = "paginacao-lista-info";
+  info.textContent = `Pagina ${paginaAtual} de ${totalPaginas} | ${itensLista.length} itens`;
+
+  const btnProxima = document.createElement("button");
+  btnProxima.type = "button";
+  btnProxima.className = "btn-paginacao";
+  btnProxima.textContent = "Proxima";
+  btnProxima.disabled = paginaAtual >= totalPaginas;
+  btnProxima.addEventListener("click", () => {
+    if (paginaAtual >= totalPaginas) return;
+    estadoPaginacaoListas[listId] = paginaAtual + 1;
+    if (typeof onChangePagina === "function") onChangePagina();
+  });
+
+  paginacao.appendChild(btnAnterior);
+  paginacao.appendChild(info);
+  paginacao.appendChild(btnProxima);
+
+  return { itensPagina, paginaAtual, totalPaginas };
+}
+
 function validarTimeComCincoJogadores(playerIds) {
   const unicos = Array.from(new Set(playerIds));
   return unicos.length === 5;
@@ -439,6 +646,385 @@ function resetarFormularioTime() {
 function obterJogadoresSelecionadosNoFormularioTime() {
   return Array.from(document.querySelectorAll('input[name="jogadoresTime"]:checked')).map((el) => el.value);
 }
+
+function normalizarPosicaoJogador(posicao) {
+  const texto = String(posicao || "").trim().toLowerCase();
+  if (texto.startsWith("gol")) return "Goleiro";
+  if (texto.startsWith("ala")) return "Ala";
+  if (texto.startsWith("fix")) return "Fixo";
+  if (texto.startsWith("piv")) return "Pivo";
+  return "Outro";
+}
+
+function embaralharArray(lista) {
+  const itens = [...lista];
+  for (let i = itens.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [itens[i], itens[j]] = [itens[j], itens[i]];
+  }
+  return itens;
+}
+
+function criarEstadoTimeAleatorio(indice) {
+  return {
+    indice,
+    id: gerarId("team"),
+    name: `Time ${indice + 1}`,
+    playerIds: [],
+    totalNivel: 0,
+    posicoes: {
+      Goleiro: 0,
+      Ala: 0,
+      Fixo: 0,
+      Pivo: 0,
+      Outro: 0
+    }
+  };
+}
+
+function adicionarJogadorAoEstadoTime(estadoTime, jogador) {
+  const posicao = normalizarPosicaoJogador(jogador.posicao);
+  estadoTime.playerIds.push(jogador.id);
+  estadoTime.totalNivel += Number(jogador.nivel || 0);
+  estadoTime.posicoes[posicao] = (estadoTime.posicoes[posicao] || 0) + 1;
+}
+
+function pontuacaoCandidatoTime(estadoTime, jogador, alvoNivelTime) {
+  const posicao = normalizarPosicaoJogador(jogador.posicao);
+  const configuracaoIdeal = {
+    Goleiro: 1,
+    Ala: 2,
+    Fixo: 1,
+    Pivo: 1,
+    Outro: 0
+  };
+
+  const nivelProjetado = estadoTime.totalNivel + Number(jogador.nivel || 0);
+  const diferencaNivel = Math.abs(nivelProjetado - alvoNivelTime);
+  const jaNoLimitePosicao = (estadoTime.posicoes[posicao] || 0) >= (configuracaoIdeal[posicao] || 0);
+  const bonusPosicaoNecessaria = (estadoTime.posicoes[posicao] || 0) < (configuracaoIdeal[posicao] || 0) ? -0.2 : 0;
+  const penalidadeExcessoPosicao = jaNoLimitePosicao ? 1.2 : 0;
+
+  return diferencaNivel + penalidadeExcessoPosicao + bonusPosicaoNecessaria;
+}
+
+function retirarMelhorCandidato(pool, estadoTime, alvoNivelTime) {
+  if (!Array.isArray(pool) || pool.length === 0) return null;
+
+  let melhorIndice = 0;
+  let melhorPontuacao = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < pool.length; i += 1) {
+    const candidato = pool[i];
+    const pontuacao = pontuacaoCandidatoTime(estadoTime, candidato, alvoNivelTime);
+    if (pontuacao < melhorPontuacao) {
+      melhorPontuacao = pontuacao;
+      melhorIndice = i;
+    }
+  }
+
+  return pool.splice(melhorIndice, 1)[0] || null;
+}
+
+function distribuirPosicaoObrigatoria(teamsState, pool, repeticoes, alvoNivelTime) {
+  for (let rodada = 0; rodada < repeticoes; rodada += 1) {
+    const ordemTimes = [...teamsState].sort((a, b) => a.totalNivel - b.totalNivel);
+    for (const estadoTime of ordemTimes) {
+      if (estadoTime.playerIds.length >= 5) continue;
+      if (pool.length === 0) return;
+      const jogador = retirarMelhorCandidato(pool, estadoTime, alvoNivelTime);
+      if (!jogador) return;
+      adicionarJogadorAoEstadoTime(estadoTime, jogador);
+    }
+  }
+}
+
+function abrirModalGerarTimesAleatorios(maximoTimes) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("modalGerarTimesAleatorios");
+    const inputQuantidade = document.getElementById("inputQuantidadeTimesAleatorios");
+    const listaJogadores = document.getElementById("listaJogadoresTimesAleatorios");
+    const resumo = document.getElementById("resumoSelecaoTimesAleatorios");
+    const btnConfirmar = document.getElementById("btnConfirmarGerarTimesAleatorios");
+    const btnCancelar = document.getElementById("btnCancelarGerarTimesAleatorios");
+    const btnSelecionarTodos = document.getElementById("btnSelecionarTodosJogadoresTimes");
+    const btnLimpar = document.getElementById("btnLimparJogadoresTimes");
+
+    if (!modal || !inputQuantidade || !listaJogadores || !resumo || !btnConfirmar || !btnCancelar || !btnSelecionarTodos || !btnLimpar) {
+      resolve(null);
+      return;
+    }
+
+    listaJogadores.innerHTML = "";
+
+    const jogadoresOrdenados = [...eventoAtual.jogadores].sort((a, b) => {
+      return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    });
+
+    jogadoresOrdenados.forEach((jogador) => {
+      const label = document.createElement("label");
+      label.className = "opcao-jogador-time";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.name = "jogadoresTimesAleatorios";
+      checkbox.value = jogador.id;
+      checkbox.checked = true;
+
+      const texto = document.createElement("span");
+      texto.textContent = `${jogador.nome} (${jogador.posicao} | ${Number(jogador.nivel || 0)} estrela(s))`;
+
+      label.appendChild(checkbox);
+      label.appendChild(texto);
+      listaJogadores.appendChild(label);
+    });
+
+    const obterIdsSelecionados = () => {
+      return Array.from(listaJogadores.querySelectorAll('input[name="jogadoresTimesAleatorios"]:checked'))
+        .map((el) => el.value);
+    };
+
+    const atualizarResumo = () => {
+      const idsSelecionados = new Set(obterIdsSelecionados());
+      const jogadoresSelecionados = eventoAtual.jogadores.filter((jogador) => idsSelecionados.has(jogador.id));
+      const totalSelecionados = jogadoresSelecionados.length;
+      const totalGoleiros = jogadoresSelecionados
+        .filter((jogador) => normalizarPosicaoJogador(jogador.posicao) === "Goleiro")
+        .length;
+      const maximoPorSelecao = Math.floor(totalSelecionados / 5);
+
+      resumo.textContent = `Selecionados: ${totalSelecionados} jogador(es) | Goleiros: ${totalGoleiros} | Maximo de times: ${maximoPorSelecao}`;
+
+      if (maximoPorSelecao >= 1) {
+        const novoMaximoInput = Math.min(maximoTimes, maximoPorSelecao);
+        inputQuantidade.max = String(novoMaximoInput);
+        if (Number(inputQuantidade.value) > novoMaximoInput) {
+          inputQuantidade.value = String(novoMaximoInput);
+        }
+        btnConfirmar.disabled = false;
+      } else {
+        inputQuantidade.max = "1";
+        btnConfirmar.disabled = true;
+      }
+    };
+
+    let encerrado = false;
+    const finalizar = (resultado) => {
+      if (encerrado) return;
+      encerrado = true;
+
+      modal.classList.add("oculto");
+
+      btnConfirmar.onclick = null;
+      btnCancelar.onclick = null;
+      btnSelecionarTodos.onclick = null;
+      btnLimpar.onclick = null;
+      modal.onclick = null;
+      listaJogadores.removeEventListener("change", atualizarResumo);
+      document.removeEventListener("keydown", fecharComEscape);
+
+      resolve(resultado);
+    };
+
+    const confirmar = () => {
+      const idsSelecionados = obterIdsSelecionados();
+      const quantidadeTimes = Number(inputQuantidade.value);
+      const maximoPorSelecao = Math.floor(idsSelecionados.length / 5);
+
+      if (!Number.isInteger(quantidadeTimes) || quantidadeTimes < 1 || quantidadeTimes > maximoTimes) {
+        alert(`Informe uma quantidade valida entre 1 e ${maximoTimes}.`);
+        return;
+      }
+
+      if (idsSelecionados.length < 5) {
+        alert("Selecione ao menos 5 jogadores para gerar times.");
+        return;
+      }
+
+      if (quantidadeTimes > maximoPorSelecao) {
+        alert(`Com os jogadores selecionados, o maximo permitido e ${maximoPorSelecao} time(s).`);
+        return;
+      }
+
+      finalizar({
+        quantidadeTimes,
+        jogadorIdsSelecionados: idsSelecionados
+      });
+    };
+
+    const fecharComEscape = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finalizar(null);
+      }
+    };
+
+    btnConfirmar.onclick = confirmar;
+    btnCancelar.onclick = () => finalizar(null);
+    btnSelecionarTodos.onclick = () => {
+      listaJogadores.querySelectorAll('input[name="jogadoresTimesAleatorios"]').forEach((checkbox) => {
+        checkbox.checked = true;
+      });
+      atualizarResumo();
+    };
+    btnLimpar.onclick = () => {
+      listaJogadores.querySelectorAll('input[name="jogadoresTimesAleatorios"]').forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      atualizarResumo();
+    };
+
+    modal.onclick = (event) => {
+      if (event.target === modal) {
+        finalizar(null);
+      }
+    };
+
+    listaJogadores.addEventListener("change", atualizarResumo);
+    document.addEventListener("keydown", fecharComEscape);
+
+    inputQuantidade.min = "1";
+    inputQuantidade.max = String(maximoTimes);
+    inputQuantidade.value = String(maximoTimes);
+
+    modal.classList.remove("oculto");
+    atualizarResumo();
+    inputQuantidade.focus();
+  });
+}
+
+async function gerarTimesAleatorios() {
+  const partidaAtiva = obterPartidaAtiva();
+  if (partidaAtiva) {
+    alert("Finalize a partida em andamento antes de gerar novos times.");
+    return;
+  }
+
+  if (eventoAtual.jogadores.length < 5) {
+    alert("Cadastre ao menos 5 jogadores para gerar times aleatorios.");
+    return;
+  }
+
+  const maximoTimes = Math.floor(eventoAtual.jogadores.length / 5);
+  if (maximoTimes < 1) {
+    alert("Nao ha jogadores suficientes para gerar times.");
+    return;
+  }
+  const configuracaoGeracao = await abrirModalGerarTimesAleatorios(maximoTimes);
+  if (!configuracaoGeracao) {
+    return;
+  }
+
+  const quantidadeTimes = configuracaoGeracao.quantidadeTimes;
+  const idsSelecionados = new Set(configuracaoGeracao.jogadorIdsSelecionados);
+  const jogadoresDisponiveis = eventoAtual.jogadores.filter((jogador) => idsSelecionados.has(jogador.id));
+
+  if (jogadoresDisponiveis.length < quantidadeTimes * 5) {
+    alert(`Jogadores insuficientes para gerar ${quantidadeTimes} time(s) com 5 jogadores.`);
+    return;
+  }
+
+  const jogadores = embaralharArray(jogadoresDisponiveis).map((jogador) => ({
+    ...jogador,
+    nivel: Number(jogador.nivel || 0),
+    posicaoNormalizada: normalizarPosicaoJogador(jogador.posicao)
+  }));
+
+  const goleiros = jogadores.filter((j) => j.posicaoNormalizada === "Goleiro");
+  if (goleiros.length < quantidadeTimes) {
+    alert(`Para gerar ${quantidadeTimes} time(s), e preciso ter ao menos ${quantidadeTimes} goleiro(s).`);
+    return;
+  }
+
+  if (eventoAtual.times.length > 0) {
+    const confirmar = window.confirm("Isso vai substituir os times cadastrados atualmente. Deseja continuar?");
+    if (!confirmar) return;
+  }
+
+  const avisos = [];
+  const alas = jogadores.filter((j) => j.posicaoNormalizada === "Ala");
+  const fixos = jogadores.filter((j) => j.posicaoNormalizada === "Fixo");
+  const pivos = jogadores.filter((j) => j.posicaoNormalizada === "Pivo");
+
+  if (alas.length < quantidadeTimes * 2) {
+    avisos.push("Nao ha alas suficientes para manter 2 alas por time em todos os times.");
+  }
+  if (fixos.length < quantidadeTimes) {
+    avisos.push("Nao ha fixos suficientes para manter 1 fixo por time em todos os times.");
+  }
+  if (pivos.length < quantidadeTimes) {
+    avisos.push("Nao ha pivos suficientes para manter 1 pivo por time em todos os times.");
+  }
+
+  const alvoNivelTime = (jogadores.reduce((soma, jogador) => soma + Number(jogador.nivel || 0), 0) / jogadores.length) * 5;
+  const teamsState = Array.from({ length: quantidadeTimes }, (_, indice) => criarEstadoTimeAleatorio(indice));
+
+  const poolGoleiros = embaralharArray(goleiros);
+  const poolAlas = embaralharArray(alas);
+  const poolFixos = embaralharArray(fixos);
+  const poolPivos = embaralharArray(pivos);
+
+  distribuirPosicaoObrigatoria(teamsState, poolGoleiros, 1, alvoNivelTime);
+  distribuirPosicaoObrigatoria(teamsState, poolAlas, 2, alvoNivelTime);
+  distribuirPosicaoObrigatoria(teamsState, poolFixos, 1, alvoNivelTime);
+  distribuirPosicaoObrigatoria(teamsState, poolPivos, 1, alvoNivelTime);
+
+  const idsJaUsados = new Set(
+    teamsState.flatMap((time) => time.playerIds)
+  );
+  const poolRestante = embaralharArray(jogadores.filter((j) => !idsJaUsados.has(j.id)));
+
+  let adicionou = true;
+  while (adicionou && poolRestante.length > 0) {
+    adicionou = false;
+    const ordemTimes = [...teamsState].sort((a, b) => {
+      if (a.playerIds.length !== b.playerIds.length) return a.playerIds.length - b.playerIds.length;
+      return a.totalNivel - b.totalNivel;
+    });
+
+    for (const estadoTime of ordemTimes) {
+      if (estadoTime.playerIds.length >= 5) continue;
+      const jogador = retirarMelhorCandidato(poolRestante, estadoTime, alvoNivelTime);
+      if (!jogador) continue;
+      adicionarJogadorAoEstadoTime(estadoTime, jogador);
+      adicionou = true;
+    }
+  }
+
+  const incompletos = teamsState.filter((time) => time.playerIds.length !== 5);
+  if (incompletos.length > 0) {
+    alert("Nao foi possivel montar todos os times com 5 jogadores. Verifique o cadastro de jogadores.");
+    return;
+  }
+
+  const agora = new Date().toISOString();
+  eventoAtual.times = teamsState.map((time, idx) => ({
+    id: time.id,
+    name: `Time ${idx + 1}`,
+    playerIds: time.playerIds,
+    createdAt: agora,
+    updatedAt: agora
+  }));
+
+  await salvarEventos();
+  resetarFormularioTime();
+  renderizarPartidas();
+
+  const jogadoresFora = jogadoresDisponiveis.length - (quantidadeTimes * 5);
+  const jogadoresNaoSelecionados = eventoAtual.jogadores.length - jogadoresDisponiveis.length;
+  const resumo = [
+    `${quantidadeTimes} time(s) gerado(s) com sucesso.`,
+    jogadoresFora > 0 ? `${jogadoresFora} jogador(es) selecionado(s) ficaram de fora por nao completar novo time de 5.` : "",
+    jogadoresNaoSelecionados > 0 ? `${jogadoresNaoSelecionados} jogador(es) nao foram selecionados no pop-up.` : ""
+  ].filter(Boolean);
+
+  if (avisos.length > 0) {
+    resumo.push(`Ajustes aplicados: ${avisos.join(" ")}`);
+  }
+
+  alert(resumo.join("\n"));
+}
+
 function salvarTime(event) {
   event.preventDefault();
 
@@ -521,50 +1107,53 @@ function excluirTime(teamId) {
 }
 
 function renderizarTimes() {
-  const lista = document.getElementById("listaTimes");
-  lista.innerHTML = "";
+  renderizarListaPaginada({
+    listId: "listaTimes",
+    itens: eventoAtual.times,
+    mensagemVazia: "Nenhum time cadastrado.",
+    onChangePagina: renderizarTimes,
+    config: {
+      min: 3,
+      max: 8,
+      alturaItemDesktop: 70,
+      alturaItemMobile: 92,
+      fatorViewport: 0.34
+    },
+    renderItem: (time) => {
+      const li = document.createElement("li");
+      li.className = "linha-time";
 
-  if (eventoAtual.times.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "Nenhum time cadastrado.";
-    lista.appendChild(li);
-    return;
-  }
+      const jogadores = time.playerIds
+        .map((id) => obterJogadorPorId(id))
+        .filter(Boolean)
+        .map((j) => j.nome)
+        .join(", ");
 
-  eventoAtual.times.forEach((time) => {
-    const li = document.createElement("li");
-    li.className = "linha-time";
+      const texto = document.createElement("span");
+      texto.textContent = `${time.name} | Jogadores: ${jogadores}`;
 
-    const jogadores = time.playerIds
-      .map((id) => obterJogadorPorId(id))
-      .filter(Boolean)
-      .map((j) => j.nome)
-      .join(", ");
+      const acoes = document.createElement("div");
+      acoes.className = "acoes-linha";
 
-    const texto = document.createElement("span");
-    texto.textContent = `${time.name} | Jogadores: ${jogadores}`;
+      const btnEditar = document.createElement("button");
+      btnEditar.type = "button";
+      btnEditar.className = "btn-detalhes";
+      btnEditar.textContent = "Editar";
+      btnEditar.addEventListener("click", () => preencherFormularioEdicaoTime(time.id));
 
-    const acoes = document.createElement("div");
-    acoes.className = "acoes-linha";
+      const btnExcluir = document.createElement("button");
+      btnExcluir.type = "button";
+      btnExcluir.className = "btn-excluir";
+      btnExcluir.textContent = "Excluir";
+      btnExcluir.addEventListener("click", () => excluirTime(time.id));
 
-    const btnEditar = document.createElement("button");
-    btnEditar.type = "button";
-    btnEditar.className = "btn-detalhes";
-    btnEditar.textContent = "Editar";
-    btnEditar.addEventListener("click", () => preencherFormularioEdicaoTime(time.id));
+      acoes.appendChild(btnEditar);
+      acoes.appendChild(btnExcluir);
 
-    const btnExcluir = document.createElement("button");
-    btnExcluir.type = "button";
-    btnExcluir.className = "btn-excluir";
-    btnExcluir.textContent = "Excluir";
-    btnExcluir.addEventListener("click", () => excluirTime(time.id));
-
-    acoes.appendChild(btnEditar);
-    acoes.appendChild(btnExcluir);
-
-    li.appendChild(texto);
-    li.appendChild(acoes);
-    lista.appendChild(li);
+      li.appendChild(texto);
+      li.appendChild(acoes);
+      return li;
+    }
   });
 }
 
@@ -914,6 +1503,24 @@ function finalizarPartida(mensagemOpcional) {
     pausarCronometro();
   }
 
+  let winnerTeamId = "";
+  if ((partida.score?.teamA || 0) > (partida.score?.teamB || 0)) {
+    winnerTeamId = partida.teamAId;
+  } else if ((partida.score?.teamB || 0) > (partida.score?.teamA || 0)) {
+    winnerTeamId = partida.teamBId;
+  }
+
+  if (winnerTeamId) {
+    const snapshotVencedor = winnerTeamId === partida.teamAId ? partida.teamASnapshot : partida.teamBSnapshot;
+    const jogadoresVencedores = Array.isArray(snapshotVencedor?.players) ? snapshotVencedor.players : [];
+    jogadoresVencedores.forEach((item) => {
+      const jogador = obterJogadorPorId(item.id);
+      if (jogador) {
+        jogador.vitoriasTotal = (jogador.vitoriasTotal || 0) + 1;
+      }
+    });
+  }
+
   partida.status = "Finalizada";
   partida.endTime = new Date().toISOString();
   partida.durationRealSec = partida.elapsedSec;
@@ -1221,87 +1828,356 @@ function renderizarDetalheHistorico(matchId) {
 }
 
 function renderizarHistorico() {
-  const lista = document.getElementById("listaHistoricoPartidas");
-  lista.innerHTML = "";
-
   const finalizadas = eventoAtual.matches
     .filter((match) => match.status === "Finalizada")
     .sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
 
   const visiveis = filtrarHistorico(finalizadas);
 
+  const resultadoPaginacao = renderizarListaPaginada({
+    listId: "listaHistoricoPartidas",
+    itens: visiveis,
+    mensagemVazia: "Nenhuma partida finalizada para os filtros selecionados.",
+    onChangePagina: renderizarHistorico,
+    config: {
+      min: 4,
+      max: 12,
+      alturaItemDesktop: 60,
+      alturaItemMobile: 76,
+      fatorViewport: 0.36
+    },
+    renderItem: (match) => {
+      const li = document.createElement("li");
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-partida-historico";
+      btn.textContent = `${formatarDataHora(match.endTime)} | ${match.teamASnapshot.name} ${match.score.teamA} x ${match.score.teamB} ${match.teamBSnapshot.name}`;
+      btn.addEventListener("click", () => {
+        selectedHistoryMatchId = match.id;
+        renderizarDetalheHistorico(selectedHistoryMatchId);
+      });
+
+      li.appendChild(btn);
+      return li;
+    }
+  });
+
   if (visiveis.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "Nenhuma partida finalizada para os filtros selecionados.";
-    lista.appendChild(li);
     renderizarDetalheHistorico("");
     return;
   }
 
-  visiveis.forEach((match) => {
-    const li = document.createElement("li");
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn-partida-historico";
-    btn.textContent = `${formatarDataHora(match.endTime)} | ${match.teamASnapshot.name} ${match.score.teamA} x ${match.score.teamB} ${match.teamBSnapshot.name}`;
-    btn.addEventListener("click", () => {
-      selectedHistoryMatchId = match.id;
-      renderizarDetalheHistorico(selectedHistoryMatchId);
-    });
-
-    li.appendChild(btn);
-    lista.appendChild(li);
-  });
-
-  const existeSelecionada = visiveis.some((m) => m.id === selectedHistoryMatchId);
-  selectedHistoryMatchId = existeSelecionada ? selectedHistoryMatchId : visiveis[0].id;
+  const idsPaginaAtual = new Set((resultadoPaginacao.itensPagina || []).map((match) => match.id));
+  const existeSelecionadaNaPagina = idsPaginaAtual.has(selectedHistoryMatchId);
+  const fallbackId = (resultadoPaginacao.itensPagina && resultadoPaginacao.itensPagina[0])
+    ? resultadoPaginacao.itensPagina[0].id
+    : (visiveis[0] ? visiveis[0].id : "");
+  selectedHistoryMatchId = existeSelecionadaNaPagina ? selectedHistoryMatchId : fallbackId;
   renderizarDetalheHistorico(selectedHistoryMatchId);
 }
 
 function renderizarRankingArtilheiros() {
-  const lista = document.getElementById("listaArtilheiros");
-  lista.innerHTML = "";
-
   const ranking = [...eventoAtual.jogadores]
     .map((jogador) => ({ nome: jogador.nome, gols: jogador.golsTotal || 0 }))
     .sort((a, b) => b.gols - a.gols || a.nome.localeCompare(b.nome));
 
-  if (ranking.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "Nenhum jogador cadastrado.";
-    lista.appendChild(li);
-    return;
-  }
-
-  ranking.forEach((item, idx) => {
-    const li = document.createElement("li");
-    li.textContent = `${idx + 1}. ${item.nome} - ${item.gols} gol(s)`;
-    lista.appendChild(li);
+  renderizarListaPaginada({
+    listId: "listaArtilheiros",
+    itens: ranking,
+    mensagemVazia: "Nenhum jogador cadastrado.",
+    onChangePagina: renderizarRankingArtilheiros,
+    config: {
+      min: 5,
+      max: 14,
+      alturaItemDesktop: 54,
+      alturaItemMobile: 64,
+      fatorViewport: 0.32
+    },
+    renderItem: (item, indiceGlobal) => {
+      const li = document.createElement("li");
+      li.textContent = `${indiceGlobal + 1}. ${item.nome} - ${item.gols} gol(s)`;
+      return li;
+    }
   });
 }
 
 function renderizarRankingAssistencias() {
-  const lista = document.getElementById("listaAssistencias");
-  if (!lista) return;
-  lista.innerHTML = "";
-
   const ranking = [...eventoAtual.jogadores]
     .map((jogador) => ({ nome: jogador.nome, assists: jogador.assistsTotal || 0 }))
     .sort((a, b) => b.assists - a.assists || a.nome.localeCompare(b.nome));
 
-  if (ranking.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "Nenhum jogador cadastrado.";
-    lista.appendChild(li);
+  renderizarListaPaginada({
+    listId: "listaAssistencias",
+    itens: ranking,
+    mensagemVazia: "Nenhum jogador cadastrado.",
+    onChangePagina: renderizarRankingAssistencias,
+    config: {
+      min: 5,
+      max: 14,
+      alturaItemDesktop: 54,
+      alturaItemMobile: 64,
+      fatorViewport: 0.32
+    },
+    renderItem: (item, indiceGlobal) => {
+      const li = document.createElement("li");
+      li.textContent = `${indiceGlobal + 1}. ${item.nome} - ${item.assists} assistencia(s)`;
+      return li;
+    }
+  });
+}
+
+function gerarRankingArtilheirosAtual() {
+  return [...eventoAtual.jogadores]
+    .map((jogador) => ({ nome: jogador.nome, gols: jogador.golsTotal || 0 }))
+    .filter((item) => item.gols > 0)
+    .sort((a, b) => b.gols - a.gols || a.nome.localeCompare(b.nome));
+}
+
+function gerarRankingAssistenciasAtual() {
+  return [...eventoAtual.jogadores]
+    .map((jogador) => ({ nome: jogador.nome, assistencias: jogador.assistsTotal || 0 }))
+    .filter((item) => item.assistencias > 0)
+    .sort((a, b) => b.assistencias - a.assistencias || a.nome.localeCompare(b.nome));
+}
+
+function gerarRankingVitoriasAtual() {
+  return [...eventoAtual.jogadores]
+    .map((jogador) => ({ nome: jogador.nome, vitorias: jogador.vitoriasTotal || 0 }))
+    .filter((item) => item.vitorias > 0)
+    .sort((a, b) => b.vitorias - a.vitorias || a.nome.localeCompare(b.nome));
+}
+
+function calcularIndiceDesempenho(jogador) {
+  const vitorias = Number(jogador.vitoriasTotal || 0);
+  const gols = Number(jogador.golsTotal || 0);
+  const assistencias = Number(jogador.assistsTotal || 0);
+  return (vitorias * 2) + (gols * 3) + (assistencias * 2);
+}
+
+function calcularBonusNivelPorDesempenho(jogador) {
+  const indice = calcularIndiceDesempenho(jogador);
+
+  if (indice >= 18) return 2;
+  if (indice >= 9) return 1;
+  return 0;
+}
+
+function aplicarEvolucaoNivelJogadores() {
+  const evolucoes = [];
+
+  eventoAtual.jogadores = eventoAtual.jogadores.map((jogador) => {
+    const nivelAtual = Number(jogador.nivel || 1);
+    const bonus = calcularBonusNivelPorDesempenho(jogador);
+    const novoNivel = Math.min(5, Math.max(1, nivelAtual + bonus));
+
+    if (novoNivel > nivelAtual) {
+      evolucoes.push({
+        nome: jogador.nome,
+        anterior: nivelAtual,
+        novo: novoNivel
+      });
+    }
+
+    return {
+      ...jogador,
+      nivel: novoNivel
+    };
+  });
+
+  return evolucoes;
+}
+
+function gerarSnapshotCampeonato() {
+  const partidasFinalizadas = eventoAtual.matches
+    .filter((match) => match.status === "Finalizada")
+    .sort((a, b) => new Date(a.endTime || a.createdAt) - new Date(b.endTime || b.createdAt))
+    .map((match) => ({
+      id: match.id,
+      createdAt: match.createdAt,
+      endTime: match.endTime,
+      durationRealSec: match.durationRealSec || 0,
+      score: match.score || { teamA: 0, teamB: 0 },
+      teamASnapshot: match.teamASnapshot,
+      teamBSnapshot: match.teamBSnapshot,
+      goals: Array.isArray(match.goals) ? match.goals : []
+    }));
+
+  const criadoEm = new Date().toISOString();
+  const dataNome = new Date(criadoEm).toLocaleString("pt-BR");
+
+  return {
+    id: gerarId("champ"),
+    nome: `Pelada ${dataNome}`,
+    createdAt: criadoEm,
+    totalPartidas: partidasFinalizadas.length,
+    partidas: partidasFinalizadas,
+    rankingVitorias: gerarRankingVitoriasAtual(),
+    rankingArtilheiros: gerarRankingArtilheirosAtual(),
+    rankingAssistencias: gerarRankingAssistenciasAtual()
+  };
+}
+
+function renderizarDetalheCampeonato(campeonatoId) {
+  const detalhe = document.getElementById("detalheCampeonato");
+  if (!detalhe) return;
+  detalhe.innerHTML = "";
+
+  const campeonato = campeonatos.find((item) => item.id === campeonatoId);
+  if (!campeonato) {
+    detalhe.innerHTML = "<p>Selecione uma pelada para ver detalhes.</p>";
     return;
   }
 
-  ranking.forEach((item, idx) => {
+  const titulo = document.createElement("h3");
+  titulo.textContent = campeonato.nome || "Pelada";
+
+  const resumo = document.createElement("p");
+  resumo.textContent = `Criado em: ${formatarDataHora(campeonato.createdAt)} | Partidas: ${campeonato.totalPartidas || 0}`;
+
+  const subtituloPartidas = document.createElement("h4");
+  subtituloPartidas.textContent = "Jogos registrados";
+
+  const listaPartidas = document.createElement("ul");
+  listaPartidas.className = "lista-jogadores";
+
+  const partidas = Array.isArray(campeonato.partidas) ? campeonato.partidas : [];
+  if (partidas.length === 0) {
     const li = document.createElement("li");
-    li.textContent = `${idx + 1}. ${item.nome} - ${item.assists} assistencia(s)`;
-    lista.appendChild(li);
+    li.textContent = "Nenhuma partida finalizada registrada.";
+    listaPartidas.appendChild(li);
+  } else {
+    partidas.forEach((match) => {
+      const li = document.createElement("li");
+      const nomeA = match.teamASnapshot?.name || "Time A";
+      const nomeB = match.teamBSnapshot?.name || "Time B";
+      const golsA = match.score?.teamA || 0;
+      const golsB = match.score?.teamB || 0;
+      li.textContent = `${formatarDataHora(match.endTime || match.createdAt)} | ${nomeA} ${golsA} x ${golsB} ${nomeB}`;
+      listaPartidas.appendChild(li);
+    });
+  }
+
+  const subtituloArtilheiros = document.createElement("h4");
+  subtituloArtilheiros.textContent = "Artilheiros";
+
+  const listaArtilheiros = document.createElement("ul");
+  listaArtilheiros.className = "lista-jogadores";
+  const rankingArtilheiros = Array.isArray(campeonato.rankingArtilheiros) ? campeonato.rankingArtilheiros : [];
+  if (rankingArtilheiros.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "Sem gols registrados nesta pelada.";
+    listaArtilheiros.appendChild(li);
+  } else {
+    rankingArtilheiros.forEach((item, idx) => {
+      const li = document.createElement("li");
+      li.textContent = `${idx + 1}. ${item.nome} - ${item.gols} gol(s)`;
+      listaArtilheiros.appendChild(li);
+    });
+  }
+
+  const subtituloAssistencias = document.createElement("h4");
+  subtituloAssistencias.textContent = "Assistencias";
+
+  const listaAssistencias = document.createElement("ul");
+  listaAssistencias.className = "lista-jogadores";
+  const rankingAssistencias = Array.isArray(campeonato.rankingAssistencias) ? campeonato.rankingAssistencias : [];
+  if (rankingAssistencias.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "Sem assistencias registradas nesta pelada.";
+    listaAssistencias.appendChild(li);
+  } else {
+    rankingAssistencias.forEach((item, idx) => {
+      const li = document.createElement("li");
+      li.textContent = `${idx + 1}. ${item.nome} - ${item.assistencias} assistencia(s)`;
+      listaAssistencias.appendChild(li);
+    });
+  }
+
+  const subtituloVitorias = document.createElement("h4");
+  subtituloVitorias.textContent = "Vitorias";
+
+  const listaVitorias = document.createElement("ul");
+  listaVitorias.className = "lista-jogadores";
+  const rankingVitorias = Array.isArray(campeonato.rankingVitorias) ? campeonato.rankingVitorias : [];
+  if (rankingVitorias.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "Sem vitorias registradas nesta pelada.";
+    listaVitorias.appendChild(li);
+  } else {
+    rankingVitorias.forEach((item, idx) => {
+      const li = document.createElement("li");
+      li.textContent = `${idx + 1}. ${item.nome} - ${item.vitorias} vitoria(s)`;
+      listaVitorias.appendChild(li);
+    });
+  }
+
+  detalhe.appendChild(titulo);
+  detalhe.appendChild(resumo);
+  detalhe.appendChild(subtituloPartidas);
+  detalhe.appendChild(listaPartidas);
+  detalhe.appendChild(subtituloArtilheiros);
+  detalhe.appendChild(listaArtilheiros);
+  detalhe.appendChild(subtituloAssistencias);
+  detalhe.appendChild(listaAssistencias);
+  detalhe.appendChild(subtituloVitorias);
+  detalhe.appendChild(listaVitorias);
+}
+
+function renderizarCampeonatos() {
+  if (!campeonatosCarregados) {
+    renderizarListaPaginada({
+      listId: "listaCampeonatos",
+      itens: [],
+      mensagemVazia: "Carregando peladas...",
+      onChangePagina: renderizarCampeonatos
+    });
+    return;
+  }
+
+  const resultadoPaginacao = renderizarListaPaginada({
+    listId: "listaCampeonatos",
+    itens: campeonatos,
+    mensagemVazia: "Nenhuma pelada salva ainda.",
+    onChangePagina: renderizarCampeonatos,
+    config: {
+      min: 4,
+      max: 12,
+      alturaItemDesktop: 60,
+      alturaItemMobile: 76,
+      fatorViewport: 0.36
+    },
+    renderItem: (campeonato, indiceGlobal) => {
+      const li = document.createElement("li");
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-partida-historico";
+      const ordem = indiceGlobal + 1;
+      btn.textContent = `Pelada ${ordem} | ${formatarDataHora(campeonato.createdAt)}`;
+      btn.addEventListener("click", () => {
+        selectedChampionshipId = campeonato.id;
+        renderizarDetalheCampeonato(selectedChampionshipId);
+      });
+
+      li.appendChild(btn);
+      return li;
+    }
   });
+
+  if (campeonatos.length === 0) {
+    renderizarDetalheCampeonato("");
+    return;
+  }
+
+  const idsPaginaAtual = new Set((resultadoPaginacao.itensPagina || []).map((item) => item.id));
+  if (!idsPaginaAtual.has(selectedChampionshipId)) {
+    selectedChampionshipId = (resultadoPaginacao.itensPagina && resultadoPaginacao.itensPagina[0])
+      ? resultadoPaginacao.itensPagina[0].id
+      : "";
+  }
+
+  renderizarDetalheCampeonato(selectedChampionshipId);
 }
 
 function exportarHistorico() {
@@ -1315,21 +2191,58 @@ function exportarHistorico() {
   URL.revokeObjectURL(url);
 }
 
-function resetarCampeonato() {
-  const confirmar = window.confirm("Isso vai apagar partidas e gols acumulados. Deseja continuar?");
+async function resetarCampeonato() {
+  const confirmar = window.confirm("Isso vai resetar a pelada atual (partidas e gols acumulados). Deseja continuar?");
   if (!confirmar) return;
+
+  const partidasFinalizadas = eventoAtual.matches.filter((match) => match.status === "Finalizada");
+  if (partidasFinalizadas.length > 0) {
+    try {
+      const snapshot = gerarSnapshotCampeonato();
+      await window.appSupabase.salvarCampeonatoEvento(eventoAtual.id, snapshot);
+      if (campeonatosCarregados) {
+        campeonatos.unshift(snapshot);
+        renderizarCampeonatos();
+      }
+    } catch (error) {
+      alert(`Falha ao salvar historico da pelada: ${error.message || error}`);
+      return;
+    }
+  }
+
+  const evolucoes = aplicarEvolucaoNivelJogadores();
 
   eventoAtual.matches = [];
   eventoAtual.activeMatchId = "";
-  eventoAtual.jogadores = eventoAtual.jogadores.map((jogador) => ({ ...jogador, golsTotal: 0, assistsTotal: 0 }));
+  eventoAtual.jogadores = eventoAtual.jogadores.map((jogador) => ({
+    ...jogador,
+    golsTotal: 0,
+    assistsTotal: 0,
+    vitoriasTotal: 0
+  }));
 
-  salvarEventos();
+  await salvarEventos();
   pararIntervaloCronometro();
   renderizarJogadores();
   renderizarPartidas();
+
+  if (evolucoes.length > 0) {
+    const linhas = evolucoes.map((item) => `${item.nome}: ${item.anterior} -> ${item.novo}`);
+    alert(`Evolucao de estrelas aplicada:\n${linhas.join("\n")}`);
+  } else {
+    alert("Pelada resetada sem alteracoes de estrelas.");
+  }
 }
 
 function renderizarPartidas() {
+  if (!partidasCarregadas) {
+    const painel = document.getElementById("painelPartidaAtiva");
+    if (painel) {
+      painel.innerHTML = "<p>Carregando dados de partidas...</p>";
+    }
+    return;
+  }
+
   atualizarBloqueioFormularioPartida();
   renderizarSelecaoJogadoresTime();
   renderizarTimes();
@@ -1342,6 +2255,7 @@ function renderizarPartidas() {
 
 function inicializarEventosPartidas() {
   document.getElementById("formTime").addEventListener("submit", salvarTime);
+  document.getElementById("btnGerarTimesAleatorios").addEventListener("click", gerarTimesAleatorios);
   document.getElementById("btnCancelarEdicaoTime").addEventListener("click", () => {
     resetarFormularioTime();
     renderizarPartidas();
@@ -1402,8 +2316,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   preencherInfoEvento();
   renderizarJogadores();
   inicializarEventosPartidas();
-  renderizarPartidas();
-  retomarCronometroSeNecessario();
+  window.addEventListener("resize", () => {
+    clearTimeout(resizePaginacaoTimeoutId);
+    resizePaginacaoTimeoutId = setTimeout(() => {
+      renderizarJogadores();
+      renderizarPartidas();
+      if (campeonatosCarregados) {
+        renderizarCampeonatos();
+      }
+    }, 140);
+  });
 
   document.getElementById("formInfoEvento").addEventListener("submit", salvarInfoEvento);
   document.getElementById("formJogador").addEventListener("submit", adicionarJogador);

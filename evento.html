@@ -18,6 +18,7 @@
         <button type="button" class="aba-btn ativa" data-aba="info">Informacoes</button>
         <button type="button" class="aba-btn" data-aba="jogadores">Jogadores</button>
         <button type="button" class="aba-btn" data-aba="partidas">Partidas</button>
+        <button type="button" class="aba-btn" data-aba="campeonatos">Peladas</button>
       </nav>
     </header>
 
@@ -125,6 +126,7 @@
 
               <div class="acoes-form">
                 <button type="submit" id="btnSalvarTime">Criar time</button>
+                <button type="button" id="btnGerarTimesAleatorios">Gerar times aleatorios</button>
                 <button type="button" id="btnCancelarEdicaoTime" class="oculto">Cancelar edicao</button>
               </div>
             </form>
@@ -168,7 +170,7 @@
             </div>
             <div class="acoes-historico">
               <button type="button" id="btnExportarHistorico">Exportar JSON</button>
-              <button type="button" id="btnResetarCampeonato" class="btn-excluir">Resetar campeonato</button>
+              <button type="button" id="btnResetarCampeonato" class="btn-excluir">Resetar pelada</button>
             </div>
           </div>
 
@@ -191,7 +193,41 @@
         </div>
       </section>
     </section>
+
+    <section id="aba-campeonatos" class="aba-conteudo">
+      <section class="card-partida">
+        <h2>Historico de peladas</h2>
+        <div class="historico-grid">
+          <ul id="listaCampeonatos" class="lista-jogadores"></ul>
+          <article id="detalheCampeonato" class="detalhe-historico"></article>
+        </div>
+      </section>
+    </section>
   </main>
+
+  <div id="modalGerarTimesAleatorios" class="modal-overlay oculto" role="dialog" aria-modal="true" aria-labelledby="tituloModalTimesAleatorios">
+    <div class="modal-card modal-times-aleatorios">
+      <h2 id="tituloModalTimesAleatorios">Gerar times aleatorios</h2>
+      <p>Escolha quantos times deseja gerar e quais jogadores estao disponiveis para o sorteio.</p>
+
+      <label for="inputQuantidadeTimesAleatorios">Quantidade de times</label>
+      <input id="inputQuantidadeTimesAleatorios" type="number" min="1" step="1">
+
+      <div class="modal-acoes-linha">
+        <button type="button" id="btnSelecionarTodosJogadoresTimes">Selecionar todos</button>
+        <button type="button" id="btnLimparJogadoresTimes" class="btn-secundario">Limpar selecao</button>
+      </div>
+
+      <p class="label-grupo">Jogadores disponiveis</p>
+      <div id="listaJogadoresTimesAleatorios" class="selecao-jogadores-time"></div>
+      <p id="resumoSelecaoTimesAleatorios" class="aviso-time"></p>
+
+      <div class="modal-acoes">
+        <button type="button" id="btnConfirmarGerarTimesAleatorios">Gerar times</button>
+        <button type="button" id="btnCancelarGerarTimesAleatorios" class="btn-secundario">Cancelar</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>

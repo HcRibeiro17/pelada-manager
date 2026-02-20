@@ -1,4 +1,12 @@
 const APP_AUTH_EMAIL_DOMAIN = "pelada-manager.app";
+let cachedAuthUser = null;
+let cachedAuthUserAt = 0;
+const AUTH_CACHE_TTL_MS = 60 * 1000;
+
+function atualizarCacheAuthUser(user) {
+  cachedAuthUser = user || null;
+  cachedAuthUserAt = user ? Date.now() : 0;
+}
 
 function normalizarUsername(username) {
   return String(username || "").trim().toLowerCase();
@@ -39,12 +47,27 @@ function getSupabaseClient() {
 }
 
 async function obterUsuarioAtualAuth() {
+  const agora = Date.now();
+  if (cachedAuthUser && (agora - cachedAuthUserAt) < AUTH_CACHE_TTL_MS) {
+    return cachedAuthUser;
+  }
+
   const sb = getSupabaseClient();
+  const { data: sessaoData, error: sessaoErro } = await sb.auth.getSession();
+
+  if (!sessaoErro && sessaoData?.session?.user) {
+    atualizarCacheAuthUser(sessaoData.session.user);
+    return sessaoData.session.user;
+  }
+
   const { data, error } = await sb.auth.getUser();
-  if (error) {
+  if (error || !data?.user) {
+    atualizarCacheAuthUser(null);
     return null;
   }
-  return data.user || null;
+
+  atualizarCacheAuthUser(data.user);
+  return data.user;
 }
 
 function mapearUsuario(authUser) {
@@ -73,6 +96,7 @@ async function loginComUsernameSenha(username, senha) {
   const emailNovo = usernameParaEmail(username);
   const tentativaNova = await sb.auth.signInWithPassword({ email: emailNovo, password: senha });
   if (!tentativaNova.error) {
+    atualizarCacheAuthUser(tentativaNova.data.user || null);
     return tentativaNova.data.user || null;
   }
 
@@ -85,6 +109,7 @@ async function loginComUsernameSenha(username, senha) {
   for (const email of emailsLegados) {
     const tentativa = await sb.auth.signInWithPassword({ email, password: senha });
     if (!tentativa.error) {
+      atualizarCacheAuthUser(tentativa.data.user || null);
       return tentativa.data.user || null;
     }
   }
@@ -115,6 +140,7 @@ async function loginComEmailSenha(email, senha) {
   const tentativa = await sb.auth.signInWithPassword({ email: emailNormalizado, password: senha });
 
   if (!tentativa.error) {
+    atualizarCacheAuthUser(tentativa.data.user || null);
     return tentativa.data.user || null;
   }
 
@@ -147,6 +173,7 @@ async function deslogar() {
   const sb = getSupabaseClient();
   const { error } = await sb.auth.signOut();
   if (error) throw error;
+  atualizarCacheAuthUser(null);
 }
 
 function mapearEventoCore(row) {
@@ -174,6 +201,23 @@ function normalizarArray(valor) {
   return Array.isArray(valor) ? valor : [];
 }
 
+function montarCoreRow(evento, ownerUserId) {
+  return {
+    id: evento.id,
+    owner_user_id: ownerUserId,
+    owner_username: evento.ownerUsername || "",
+    owner_email: evento.ownerEmail || "",
+    nome: evento.nome || "",
+    dia_semana: evento.diaSemana || "",
+    hora_inicio: evento.horaInicio || "",
+    tipo: evento.tipo || "",
+    limite_jogadores: Number(evento.limiteJogadores || 0),
+    limite_goleiros: Number(evento.limiteGoleiros || 0),
+    match_duration_minutes: Number(evento.matchDurationMinutes || 10),
+    active_match_id: evento.activeMatchId || ""
+  };
+}
+
 async function carregarEventosConta() {
   const sb = getSupabaseClient();
   const user = await obterUsuarioAtualAuth();
@@ -188,13 +232,45 @@ async function carregarEventosConta() {
   return (data || []).map(mapearEventoCore);
 }
 
-async function carregarEventoCompleto(eventId) {
+async function carregarEventoBasico(eventId) {
   const sb = getSupabaseClient();
   const user = await obterUsuarioAtualAuth();
   if (!user) throw new Error("Usuario nao autenticado.");
 
   const { data: eventoRow, error: eventoError } = await sb.from("events")
-    .select("id,nome,dia_semana,hora_inicio,tipo,limite_jogadores,limite_goleiros,match_duration_minutes,active_match_id,created_at,owner_user_id,owner_username,owner_email")
+    .select(`
+      id,
+      nome,
+      dia_semana,
+      hora_inicio,
+      tipo,
+      limite_jogadores,
+      limite_goleiros,
+      match_duration_minutes,
+      active_match_id,
+      created_at,
+      owner_user_id,
+      owner_username,
+      owner_email,
+      event_players (
+        id,
+        nome,
+        posicao,
+        nivel,
+        mensalista,
+        gols_total,
+        assists_total,
+        wins_total,
+        created_at
+      ),
+      event_teams (
+        id,
+        name,
+        player_ids,
+        created_at,
+        updated_at
+      )
+    `)
     .eq("id", eventId)
     .eq("owner_user_id", user.id)
     .maybeSingle();
@@ -202,17 +278,52 @@ async function carregarEventoCompleto(eventId) {
   if (eventoError) throw eventoError;
   if (!eventoRow) return null;
 
-  const [playersResp, teamsResp, matchesResp, goalsResp] = await Promise.all([
-    sb.from("event_players")
-      .select("id,nome,posicao,nivel,mensalista,gols_total,assists_total")
-      .eq("event_id", eventId)
-      .eq("owner_user_id", user.id)
-      .order("created_at", { ascending: true }),
-    sb.from("event_teams")
-      .select("id,name,player_ids,created_at,updated_at")
-      .eq("event_id", eventId)
-      .eq("owner_user_id", user.id)
-      .order("created_at", { ascending: true }),
+  const evento = mapearEventoCore(eventoRow);
+  const jogadoresRows = normalizarArray(eventoRow.event_players)
+    .slice()
+    .sort((a, b) => String(a?.created_at || "").localeCompare(String(b?.created_at || "")));
+  const timesRows = normalizarArray(eventoRow.event_teams)
+    .slice()
+    .sort((a, b) => String(a?.created_at || "").localeCompare(String(b?.created_at || "")));
+
+  evento.jogadores = jogadoresRows.map((p) => ({
+    id: p.id,
+    nome: p.nome,
+    posicao: p.posicao,
+    nivel: Number(p.nivel || 0),
+    mensalista: Boolean(p.mensalista),
+    golsTotal: Number(p.gols_total || 0),
+    assistsTotal: Number(p.assists_total || 0),
+    vitoriasTotal: Number(p.wins_total || 0)
+  }));
+
+  evento.times = timesRows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    playerIds: normalizarArray(t.player_ids),
+    createdAt: t.created_at,
+    updatedAt: t.updated_at
+  }));
+
+  evento.matches = [];
+  return evento;
+}
+
+async function carregarDadosPartidasEvento(eventId) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const { data: eventoRow, error: eventoError } = await sb.from("events")
+    .select("id,active_match_id,match_duration_minutes")
+    .eq("id", eventId)
+    .eq("owner_user_id", user.id)
+    .maybeSingle();
+
+  if (eventoError) throw eventoError;
+  if (!eventoRow) return null;
+
+  const [matchesResp, goalsResp] = await Promise.all([
     sb.from("event_matches")
       .select("id,team_a_id,team_b_id,team_a_snapshot,team_b_snapshot,score,created_at,start_time,end_time,duration_configured_sec,remaining_sec,elapsed_sec,duration_real_sec,status,is_clock_running,last_tick_at,history_immutable")
       .eq("event_id", eventId)
@@ -225,30 +336,8 @@ async function carregarEventoCompleto(eventId) {
       .order("timestamp", { ascending: true })
   ]);
 
-  if (playersResp.error) throw playersResp.error;
-  if (teamsResp.error) throw teamsResp.error;
   if (matchesResp.error) throw matchesResp.error;
   if (goalsResp.error) throw goalsResp.error;
-
-  const evento = mapearEventoCore(eventoRow);
-
-  evento.jogadores = (playersResp.data || []).map((p) => ({
-    id: p.id,
-    nome: p.nome,
-    posicao: p.posicao,
-    nivel: Number(p.nivel || 0),
-    mensalista: Boolean(p.mensalista),
-    golsTotal: Number(p.gols_total || 0),
-    assistsTotal: Number(p.assists_total || 0)
-  }));
-
-  evento.times = (teamsResp.data || []).map((t) => ({
-    id: t.id,
-    name: t.name,
-    playerIds: normalizarArray(t.player_ids),
-    createdAt: t.created_at,
-    updatedAt: t.updated_at
-  }));
 
   const goalsByMatch = {};
   (goalsResp.data || []).forEach((g) => {
@@ -266,7 +355,7 @@ async function carregarEventoCompleto(eventId) {
     });
   });
 
-  evento.matches = (matchesResp.data || []).map((m) => ({
+  const matches = (matchesResp.data || []).map((m) => ({
     id: m.id,
     teamAId: m.team_a_id,
     teamBId: m.team_b_id,
@@ -287,7 +376,37 @@ async function carregarEventoCompleto(eventId) {
     historyImmutable: Boolean(m.history_immutable)
   }));
 
+  return {
+    matches,
+    activeMatchId: eventoRow.active_match_id || "",
+    matchDurationMinutes: Number(eventoRow.match_duration_minutes || 10)
+  };
+}
+
+async function carregarEventoCompleto(eventId) {
+  const evento = await carregarEventoBasico(eventId);
+  if (!evento) return null;
+  const dadosPartidas = await carregarDadosPartidasEvento(eventId);
+  if (!dadosPartidas) return evento;
+  evento.matches = dadosPartidas.matches;
+  evento.activeMatchId = dadosPartidas.activeMatchId || evento.activeMatchId || "";
+  if (Number.isFinite(dadosPartidas.matchDurationMinutes)) {
+    evento.matchDurationMinutes = dadosPartidas.matchDurationMinutes;
+  }
   return evento;
+}
+
+async function salvarEventoBasico(eventoInput) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const evento = eventoInput && typeof eventoInput === "object" ? { ...eventoInput } : {};
+  if (!evento.id) throw new Error("Evento invalido: id ausente.");
+
+  const coreRow = montarCoreRow(evento, user.id);
+  const { error } = await sb.from("events").upsert(coreRow, { onConflict: "id" });
+  if (error) throw error;
 }
 
 async function salvarEventoCompleto(eventoInput) {
@@ -298,20 +417,7 @@ async function salvarEventoCompleto(eventoInput) {
   const evento = eventoInput && typeof eventoInput === "object" ? { ...eventoInput } : {};
   if (!evento.id) throw new Error("Evento invalido: id ausente.");
 
-  const coreRow = {
-    id: evento.id,
-    owner_user_id: user.id,
-    owner_username: evento.ownerUsername || "",
-    owner_email: evento.ownerEmail || "",
-    nome: evento.nome || "",
-    dia_semana: evento.diaSemana || "",
-    hora_inicio: evento.horaInicio || "",
-    tipo: evento.tipo || "",
-    limite_jogadores: Number(evento.limiteJogadores || 0),
-    limite_goleiros: Number(evento.limiteGoleiros || 0),
-    match_duration_minutes: Number(evento.matchDurationMinutes || 10),
-    active_match_id: evento.activeMatchId || ""
-  };
+  const coreRow = montarCoreRow(evento, user.id);
 
   const { error: coreError } = await sb.from("events").upsert(coreRow, { onConflict: "id" });
   if (coreError) throw coreError;
@@ -334,7 +440,8 @@ async function salvarEventoCompleto(eventoInput) {
     nivel: Number(j.nivel || 0),
     mensalista: Boolean(j.mensalista),
     gols_total: Number(j.golsTotal || 0),
-    assists_total: Number(j.assistsTotal || 0)
+    assists_total: Number(j.assistsTotal || 0),
+    wins_total: Number(j.vitoriasTotal || 0)
   }));
 
   if (jogadores.length > 0) {
@@ -422,6 +529,50 @@ async function excluirEventoConta(eventId) {
   if (error) throw error;
 }
 
+async function carregarCampeonatosEvento(eventId) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const { data, error } = await sb.from("event_championships")
+    .select("id,name,payload,created_at")
+    .eq("event_id", eventId)
+    .eq("owner_user_id", user.id)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((row) => {
+    const payload = row.payload && typeof row.payload === "object" ? row.payload : {};
+    return {
+      ...payload,
+      id: row.id,
+      nome: row.name || payload.nome || "Campeonato",
+      createdAt: row.created_at || payload.createdAt || new Date().toISOString()
+    };
+  });
+}
+
+async function salvarCampeonatoEvento(eventId, campeonatoInput) {
+  const sb = getSupabaseClient();
+  const user = await obterUsuarioAtualAuth();
+  if (!user) throw new Error("Usuario nao autenticado.");
+
+  const campeonato = campeonatoInput && typeof campeonatoInput === "object" ? { ...campeonatoInput } : {};
+  if (!campeonato.id) throw new Error("Campeonato invalido: id ausente.");
+
+  const row = {
+    id: campeonato.id,
+    event_id: eventId,
+    owner_user_id: user.id,
+    name: campeonato.nome || "Campeonato",
+    payload: campeonato
+  };
+
+  const { error } = await sb.from("event_championships").insert(row);
+  if (error) throw error;
+}
+
 // Compatibilidade: legado app_user_data
 async function carregarDadosApp() {
   const eventos = await carregarEventosConta();
@@ -447,9 +598,14 @@ window.appSupabase = {
   cadastrarComUsernameSenha,
   deslogar,
   carregarEventosConta,
+  carregarEventoBasico,
+  carregarDadosPartidasEvento,
   carregarEventoCompleto,
+  salvarEventoBasico,
   salvarEventoCompleto,
   excluirEventoConta,
+  carregarCampeonatosEvento,
+  salvarCampeonatoEvento,
   carregarDadosApp,
   salvarDadosApp
 };
