@@ -1,8 +1,4 @@
 
-const CHAVE_USUARIOS = "usuarios";
-const CHAVE_USUARIO_ATUAL = "usuarioAtualId";
-const CHAVE_EVENTOS_POR_USUARIO = "eventosPorUsuario";
-
 let eventos = [];
 const params = new URLSearchParams(window.location.search);
 const eventoId = params.get("id");
@@ -13,42 +9,19 @@ let usuarioAtual = null;
 let selectedHistoryMatchId = "";
 let matchIntervalId = null;
 let salvarCounter = 0;
+let appData = { eventos: [] };
 
 function gerarId(prefixo) {
   return `${prefixo}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
-function carregarUsuarios() {
-  return JSON.parse(localStorage.getItem(CHAVE_USUARIOS)) || [];
-}
-
-function obterUsuarioAtual() {
-  const usuarios = carregarUsuarios();
-  const usuarioAtualId = localStorage.getItem(CHAVE_USUARIO_ATUAL);
-  return usuarios.find((usuario) => usuario.id === usuarioAtualId) || null;
-}
-
-function carregarEventosDoUsuario(idUsuario) {
-  const eventosPorUsuario = JSON.parse(localStorage.getItem(CHAVE_EVENTOS_POR_USUARIO)) || {};
-
-  if (!eventosPorUsuario[idUsuario]) {
-    const eventosLegado = JSON.parse(localStorage.getItem("eventos")) || [];
-    const semContasMigradas = Object.keys(eventosPorUsuario).length === 0;
-    eventosPorUsuario[idUsuario] = semContasMigradas ? eventosLegado : [];
-    localStorage.setItem(CHAVE_EVENTOS_POR_USUARIO, JSON.stringify(eventosPorUsuario));
-  }
-
-  return eventosPorUsuario[idUsuario] || [];
-}
-
 function salvarEventos() {
-  const eventosPorUsuario = JSON.parse(localStorage.getItem(CHAVE_EVENTOS_POR_USUARIO)) || {};
-  eventosPorUsuario[usuarioAtual.id] = eventos;
-  localStorage.setItem(CHAVE_EVENTOS_POR_USUARIO, JSON.stringify(eventosPorUsuario));
+  appData.eventos = eventos;
+  return window.appSupabase.salvarDadosApp(appData);
 }
 
-function trocarConta() {
-  localStorage.removeItem(CHAVE_USUARIO_ATUAL);
+async function trocarConta() {
+  await window.appSupabase.deslogar();
   window.location.href = "login.html";
 }
 
@@ -1306,15 +1279,25 @@ function retomarCronometroSeNecessario() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  usuarioAtual = obterUsuarioAtual();
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    window.appSupabase.getSupabaseClient();
+  } catch (error) {
+    alert(`${error.message} Consulte SUPABASE_SETUP.md`);
+    window.location.href = "login.html";
+    return;
+  }
+
+  const authUser = await window.appSupabase.obterUsuarioAtualAuth();
+  usuarioAtual = window.appSupabase.mapearUsuario(authUser);
 
   if (!usuarioAtual) {
     window.location.href = "login.html";
     return;
   }
 
-  eventos = carregarEventosDoUsuario(usuarioAtual.id);
+  appData = await window.appSupabase.carregarDadosApp();
+  eventos = appData.eventos || [];
 
   if (!eventoId) {
     alert("Evento invalido.");

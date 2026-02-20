@@ -1,42 +1,20 @@
-﻿const CHAVE_USUARIOS = "usuarios";
-const CHAVE_USUARIO_ATUAL = "usuarioAtualId";
-const CHAVE_EVENTOS_POR_USUARIO = "eventosPorUsuario";
-
 let eventos = [];
 let diaSelecionado = "";
 let usuarioAtual = null;
-
-function carregarUsuarios() {
-  return JSON.parse(localStorage.getItem(CHAVE_USUARIOS)) || [];
-}
-
-function obterUsuarioAtual() {
-  const usuarios = carregarUsuarios();
-  const usuarioAtualId = localStorage.getItem(CHAVE_USUARIO_ATUAL);
-  return usuarios.find((usuario) => usuario.id === usuarioAtualId) || null;
-}
-
-function carregarEventosDoUsuario(idUsuario) {
-  const eventosPorUsuario = JSON.parse(localStorage.getItem(CHAVE_EVENTOS_POR_USUARIO)) || {};
-
-  if (!eventosPorUsuario[idUsuario]) {
-    const eventosLegado = JSON.parse(localStorage.getItem("eventos")) || [];
-    const semContasMigradas = Object.keys(eventosPorUsuario).length === 0;
-    eventosPorUsuario[idUsuario] = semContasMigradas ? eventosLegado : [];
-    localStorage.setItem(CHAVE_EVENTOS_POR_USUARIO, JSON.stringify(eventosPorUsuario));
-  }
-
-  return eventosPorUsuario[idUsuario] || [];
-}
-
-function salvarEventos() {
-  const eventosPorUsuario = JSON.parse(localStorage.getItem(CHAVE_EVENTOS_POR_USUARIO)) || {};
-  eventosPorUsuario[usuarioAtual.id] = eventos;
-  localStorage.setItem(CHAVE_EVENTOS_POR_USUARIO, JSON.stringify(eventosPorUsuario));
-}
+let appData = { eventos: [] };
 
 function gerarIdEvento() {
   return `evt_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+async function carregarEventosDoUsuario() {
+  appData = await window.appSupabase.carregarDadosApp();
+  return appData.eventos || [];
+}
+
+function salvarEventos() {
+  appData.eventos = eventos;
+  return window.appSupabase.salvarDadosApp(appData);
 }
 
 function normalizarEventos() {
@@ -93,9 +71,9 @@ function inicializarDiasSemana() {
   });
 }
 
-function excluirEvento(indice) {
+async function excluirEvento(indice) {
   eventos.splice(indice, 1);
-  salvarEventos();
+  await salvarEventos();
   listarEventos();
 }
 
@@ -127,7 +105,9 @@ function listarEventos() {
     btnExcluir.className = "btn-excluir";
     btnExcluir.type = "button";
     btnExcluir.textContent = "Excluir evento";
-    btnExcluir.addEventListener("click", () => excluirEvento(indice));
+    btnExcluir.addEventListener("click", () => {
+      excluirEvento(indice);
+    });
 
     acoes.appendChild(linkDetalhes);
     acoes.appendChild(btnExcluir);
@@ -154,26 +134,35 @@ function toggleMenu() {
   }
 }
 
-function trocarConta() {
-  localStorage.removeItem(CHAVE_USUARIO_ATUAL);
+async function trocarConta() {
+  await window.appSupabase.deslogar();
   window.location.href = "login.html";
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  usuarioAtual = obterUsuarioAtual();
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    window.appSupabase.getSupabaseClient();
+  } catch (error) {
+    alert(`${error.message} Consulte SUPABASE_SETUP.md`);
+    window.location.href = "login.html";
+    return;
+  }
+
+  const authUser = await window.appSupabase.obterUsuarioAtualAuth();
+  usuarioAtual = window.appSupabase.mapearUsuario(authUser);
 
   if (!usuarioAtual) {
     window.location.href = "login.html";
     return;
   }
 
-  eventos = carregarEventosDoUsuario(usuarioAtual.id);
+  eventos = await carregarEventosDoUsuario();
   normalizarEventos();
   inicializarDiasSemana();
 
   document.getElementById("cancelarEvento").addEventListener("click", fecharFormularioEvento);
 
-  document.getElementById("formEvento").addEventListener("submit", (event) => {
+  document.getElementById("formEvento").addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const nome = document.getElementById("nomeEvento").value.trim();
@@ -204,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
       dataCriacao: new Date().toISOString()
     });
 
-    salvarEventos();
+    await salvarEventos();
     listarEventos();
     fecharFormularioEvento();
   });

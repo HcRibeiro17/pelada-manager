@@ -8,14 +8,14 @@
 <body>
   <main class="conteudo conteudo-pessoas auth-container">
     <h1>Pelada Manager</h1>
-    <p>Entre com usuario e senha ou crie sua conta.</p>
+    <p>Entre com email e senha ou crie sua conta.</p>
 
     <div class="auth-grid">
       <section class="card-pessoas">
         <h2>Entrar</h2>
         <form id="formLogin" class="form-evento">
-          <label for="loginUsuario">Usuario</label>
-          <input id="loginUsuario" name="loginUsuario" type="text" autocomplete="username" required>
+          <label for="loginEmail">Email</label>
+          <input id="loginEmail" name="loginEmail" type="email" autocomplete="email" required>
 
           <label for="loginSenha">Senha</label>
           <input id="loginSenha" name="loginSenha" type="password" autocomplete="current-password" required>
@@ -33,6 +33,9 @@
           <label for="cadastroUsuario">Usuario</label>
           <input id="cadastroUsuario" name="cadastroUsuario" type="text" required>
 
+          <label for="cadastroEmail">Email</label>
+          <input id="cadastroEmail" name="cadastroEmail" type="email" autocomplete="email" required>
+
           <label for="cadastroSenha">Senha</label>
           <input id="cadastroSenha" name="cadastroSenha" type="password" autocomplete="new-password" required>
 
@@ -42,6 +45,9 @@
     </div>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="supabase-client.js"></script>
   <script src="login.js"></script>
 </body>
 </html>

@@ -1,22 +1,3 @@
-const CHAVE_USUARIOS = "usuarios";
-const CHAVE_USUARIO_ATUAL = "usuarioAtualId";
-const CHAVE_EVENTOS_POR_USUARIO = "eventosPorUsuario";
-
-function carregarUsuarios() {
-  return JSON.parse(localStorage.getItem(CHAVE_USUARIOS)) || [];
-}
-
-function obterUsuarioAtual() {
-  const usuarios = carregarUsuarios();
-  const usuarioAtualId = localStorage.getItem(CHAVE_USUARIO_ATUAL);
-  return usuarios.find((usuario) => usuario.id === usuarioAtualId) || null;
-}
-
-function carregarEventosDoUsuario(idUsuario) {
-  const eventosPorUsuario = JSON.parse(localStorage.getItem(CHAVE_EVENTOS_POR_USUARIO)) || {};
-  return eventosPorUsuario[idUsuario] || [];
-}
-
 function calcularEstatisticas(eventos) {
   let totalPartidas = 0;
   let totalGols = 0;
@@ -41,20 +22,31 @@ function calcularEstatisticas(eventos) {
   };
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const usuarioAtual = obterUsuarioAtual();
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    window.appSupabase.getSupabaseClient();
+  } catch (error) {
+    alert(`${error.message} Consulte SUPABASE_SETUP.md`);
+    window.location.href = "login.html";
+    return;
+  }
+
+  const authUser = await window.appSupabase.obterUsuarioAtualAuth();
+  const usuarioAtual = window.appSupabase.mapearUsuario(authUser);
 
   if (!usuarioAtual) {
     window.location.href = "login.html";
     return;
   }
 
-  const eventos = carregarEventosDoUsuario(usuarioAtual.id);
+  const appData = await window.appSupabase.carregarDadosApp();
+  const eventos = appData.eventos || [];
   const stats = calcularEstatisticas(eventos);
 
   document.getElementById("perfilNome").textContent = `Nome: ${usuarioAtual.nome}`;
-  document.getElementById("perfilId").textContent = `ID da conta: ${usuarioAtual.id}`;
   document.getElementById("perfilUsuario").textContent = `Usuario: ${usuarioAtual.username || "-"}`;
+  document.getElementById("perfilEmail").textContent = `Email: ${usuarioAtual.email || "-"}`;
+  document.getElementById("perfilId").textContent = `ID da conta: ${usuarioAtual.id}`;
   document.getElementById("perfilEventos").textContent = `Eventos cadastrados: ${stats.totalEventos}`;
   document.getElementById("perfilPartidas").textContent = `Partidas finalizadas: ${stats.totalPartidas}`;
   document.getElementById("perfilGols").textContent = `Gols acumulados: ${stats.totalGols}`;
